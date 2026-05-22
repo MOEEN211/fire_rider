@@ -2,10 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey);
 
 let client: ReturnType<typeof createClient>;
 
-if (supabaseUrl && supabasePublishableKey) {
+if (isSupabaseConfigured) {
   client = createClient(supabaseUrl, supabasePublishableKey);
 } else {
   client = new Proxy({} as ReturnType<typeof createClient>, {
