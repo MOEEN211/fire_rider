@@ -8,8 +8,8 @@ export const mockVehicles: Vehicle[] = [
     seats: [
       { id: 'v1-oic', label: 'OIC' },
       { id: 'v1-driver', label: 'DRIVER' },
-      { id: 'v1-ba1', label: 'BA 1' },
-      { id: 'v1-ba2', label: 'BA 2' },
+      { id: 'v1-ba1', label: 'BA' },
+      { id: 'v1-ba2', label: 'BA' },
       { id: 'v1-eco', label: 'ECO' },
     ],
   },
@@ -20,8 +20,8 @@ export const mockVehicles: Vehicle[] = [
     seats: [
       { id: 'v2-oic', label: 'OIC' },
       { id: 'v2-driver', label: 'DRIVER' },
-      { id: 'v2-ba1', label: 'BA 1' },
-      { id: 'v2-ba2', label: 'BA 2' },
+      { id: 'v2-ba1', label: 'BA' },
+      { id: 'v2-ba2', label: 'BA' },
       { id: 'v2-eco', label: 'ECO' },
     ],
   },

@@ -18,8 +18,7 @@ export type AssignmentHistory = {
 export const PUMP_SEAT_REQUIREMENTS: Record<string, SeatRequirement> = {
   OIC: { label: 'OIC', requiredSkills: ['OIC'], requiredRanks: ['WC', 'CC'], excludedRanks: ['FF'] },
   DRIVER: { label: 'DRIVER', requiredSkills: ['LGVE'], excludedRanks: ['WC'] },
-  'BA 1': { label: 'BA 1', requiredSkills: ['BA'], ffPriority: true },
-  'BA 2': { label: 'BA 2', requiredSkills: ['BA'], ffPriority: true },
+  BA: { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
   ECO: { label: 'ECO', requiredSkills: ['BA'], ffPriority: true },
 };
 
@@ -179,8 +178,8 @@ export function assignSeat(
 /**
  * Generate automatic seat assignments following all Green Watch Riders rules:
  * 1. Time Since Last for all positions (unless crewing needs override)
- * 2. Fill 41P1 core crew (OIC, Driver, BA 1, BA 2) first
- * 3. Then fill 41P2 core crew (OIC, Driver, BA 1, BA 2)
+ * 2. Fill 41P1 core crew (OIC, Driver, BA, BA) first
+ * 3. Then fill 41P2 core crew (OIC, Driver, BA, BA)
  * 4. Then ECO on 41P1, then ECO on 41P2
  * 5. 41A8 crewed from 41P2 pool (after 41P2 core crew assigned)
  * 6. OIC/DRIVER priority over BA/ECO
@@ -248,8 +247,8 @@ export function generateBoardAssignments(
   // === PHASE 1: 41P1 Core Crew ===
   const p1OIC = getSeat(v41P1, 'OIC');
   const p1Driver = getSeat(v41P1, 'DRIVER');
-  const p1BA1 = getSeat(v41P1, 'BA 1');
-  const p1BA2 = getSeat(v41P1, 'BA 2');
+  const p1BA1 = getSeat(v41P1, 'BA');
+  const p1BA2 = getSeat(v41P1, 'BA');
   const p1ECO = getSeat(v41P1, 'ECO');
 
   // Rule 9: WC must be in OIC seat
@@ -268,8 +267,8 @@ export function generateBoardAssignments(
   // === PHASE 2: 41P2 Core Crew ===
   const p2OIC = getSeat(v41P2, 'OIC');
   const p2Driver = getSeat(v41P2, 'DRIVER');
-  const p2BA1 = getSeat(v41P2, 'BA 1');
-  const p2BA2 = getSeat(v41P2, 'BA 2');
+  const p2BA1 = getSeat(v41P2, 'BA');
+  const p2BA2 = getSeat(v41P2, 'BA');
   const p2ECO = getSeat(v41P2, 'ECO');
 
   tryAssign(p2OIC, (p) => p.skills.includes('OIC') && (p.rank === 'WC' || p.rank === 'CC'));
@@ -304,7 +303,8 @@ export function generateBoardAssignments(
       const best = scored[0];
 
       assignments[a8OIC.id] = best.person.id;
-      delete assignments[best.seatId];
+      // Keep on 41P2 as well per new rule
+      // delete assignments[best.seatId];
     }
   }
 
@@ -329,7 +329,8 @@ export function generateBoardAssignments(
       const best = scored[0];
 
       assignments[a8Driver.id] = best.person.id;
-      delete assignments[best.seatId];
+      // Keep on 41P2 as well per new rule
+      // delete assignments[best.seatId];
     }
   }
 
