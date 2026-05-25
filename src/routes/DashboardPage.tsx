@@ -147,12 +147,18 @@ export default function DashboardPage() {
         );
 
         // Set rides count to TOTAL historical rides from database (not just today)
-        setPeople((currentPeople) =>
-          currentPeople.map((person) => ({
-            ...person,
-            rides: totalRides[person.id] ?? 0,
-          })),
-        );
+        console.log('[loadSavedBoardState] Setting rides count. TotalRides:', totalRides);
+        setPeople((currentPeople) => {
+          console.log('[loadSavedBoardState] Current people count:', currentPeople.length);
+          return currentPeople.map((person) => {
+            const rides = totalRides[person.id] ?? 0;
+            console.log(`[loadSavedBoardState] Person ${person.name} (${person.id}): rides = ${rides}`);
+            return {
+              ...person,
+              rides,
+            };
+          });
+        });
       } catch (error) {
         console.error('Failed to load saved board assignments', error);
       }
