@@ -119,13 +119,13 @@ export default function DashboardPage() {
 
         setBoardStatus(board?.status ?? 'Draft');
 
-        // Load saved seat assignments
+        // Reset all assignments to empty first, then load saved data for this date
         setVehicles((currentVehicles) =>
           currentVehicles.map((vehicle) => ({
             ...vehicle,
             seats: vehicle.seats.map((seat) => {
+              // Only assign if there's a saved assignment for THIS date
               const savedAssignment = seatAssignments.find((assignment) => assignment.seat_id === seat.id);
-
               return {
                 ...seat,
                 personId: savedAssignment?.person_id ?? undefined,
@@ -134,7 +134,7 @@ export default function DashboardPage() {
           })),
         );
 
-        // Load saved duty assignments (or clear if none)
+        // Reset duties to empty first, then load saved data for this date
         setDuties((currentDuties) =>
           currentDuties.map((duty) => {
             const saved = dutyAssignments.find((a) => a.duty_id === duty.id);
@@ -143,6 +143,14 @@ export default function DashboardPage() {
               personId: saved?.person_id ?? undefined,
             };
           }),
+        );
+
+        // Reset rides count since we're on a new date with fresh assignments
+        setPeople((currentPeople) =>
+          currentPeople.map((person) => ({
+            ...person,
+            rides: 0,
+          })),
         );
       } catch (error) {
         console.error('Failed to load saved board assignments', error);
