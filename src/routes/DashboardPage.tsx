@@ -205,14 +205,15 @@ export default function DashboardPage() {
     };
   }, [selectedDate, dataSource]);
 
-  function handleGenerate() {
-    console.log('[handleGenerate] people:', people);
-    console.log('[handleGenerate] vehicles:', vehicles);
+  // Auto-generate board assignments following all rules
+  function handleAutoGenerate() {
+    console.log('[handleAutoGenerate] people:', people);
+    console.log('[handleAutoGenerate] vehicles:', vehicles);
     const history = buildMockHistory(people, vehicles, duties);
 
     // Generate seat assignments
     const seatAssignments = generateBoardAssignments(vehicles, people, history);
-    console.log('[handleGenerate] seatAssignments:', seatAssignments);
+    console.log('[handleAutoGenerate] seatAssignments:', seatAssignments);
 
     const updatedVehicles = vehicles.map((vehicle) => ({
       ...vehicle,
@@ -226,7 +227,7 @@ export default function DashboardPage() {
 
     // Generate duty assignments (Rule 6: rotate fairly between FF rank)
     const dutyAssignments = generateDutyAssignments(duties, people, history);
-    console.log('[handleGenerate] dutyAssignments:', dutyAssignments);
+    console.log('[handleAutoGenerate] dutyAssignments:', dutyAssignments);
 
     const updatedDuties = duties.map((duty) => ({
       ...duty,
@@ -257,38 +258,85 @@ export default function DashboardPage() {
       })),
     );
 
-    // Save all assignments to database (only if IDs are valid UUIDs — skip mock data)
+    setConfirmationStatus('Board auto-generated. Click Confirm Board to save.');
+  }
+
+  // Save current board assignments (after editing or auto-generating)
+  async function handleConfirmBoard() {
+    console.log('[handleConfirmBoard] Saving current assignments...');
+    setConfirmationStatus('Saving board...');
+
+    // Calculate rides count from current state
+    const ridesCount = new Map<string, number>();
+    vehicles.forEach((vehicle) => {
+      vehicle.seats.forEach((seat) => {
+        if (seat.personId) {
+          ridesCount.set(seat.personId, (ridesCount.get(seat.personId) ?? 0) + 1);
+        }
+      });
+    });
+    duties.forEach((duty) => {
+      if (duty.personId) {
+        ridesCount.set(duty.personId, (ridesCount.get(duty.personId) ?? 0) + 1);
+      }
+    });
+
+    setPeople((currentPeople) =>
+      currentPeople.map((person) => ({
+        ...person,
+        rides: ridesCount.get(person.id) ?? 0,
+      })),
+    );
+
+    // Save all assignments to database
     const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
     const boardDate = formatDateForSupabase(selectedDate);
-    // Save seat assignments
-    Object.entries(seatAssignments).forEach(([seatId, personId]) => {
-      if (!isUuid(seatId)) {
-        console.log('[handleGenerate] Skipping mock seatId save:', seatId);
-        return;
-      }
-      if (personId && !isUuid(personId)) {
-        console.log('[handleGenerate] Skipping mock personId save:', personId);
-        return;
-      }
-      saveSeatAssignment(boardDate, seatId, personId, shift).catch((err) => {
-        console.error('[handleGenerate] Error saving seat assignment', { seatId, personId, err });
+
+    const savePromises: Promise<unknown>[] = [];
+
+    // Save seat assignments from current state
+    vehicles.forEach((vehicle) => {
+      vehicle.seats.forEach((seat) => {
+        if (!isUuid(seat.id)) {
+          console.log('[handleConfirmBoard] Skipping mock seatId save:', seat.id);
+          return;
+        }
+        if (seat.personId && !isUuid(seat.personId)) {
+          console.log('[handleConfirmBoard] Skipping mock personId save:', seat.personId);
+          return;
+        }
+        savePromises.push(
+          saveSeatAssignment(boardDate, seat.id, seat.personId, shift).catch((err) => {
+            console.error('[handleConfirmBoard] Error saving seat assignment', { seatId: seat.id, personId: seat.personId, err });
+          })
+        );
       });
     });
 
-    // Save duty assignments
-    Object.entries(dutyAssignments).forEach(([dutyId, personId]) => {
-      if (!isUuid(dutyId)) {
-        console.log('[handleGenerate] Skipping mock dutyId save:', dutyId);
+    // Save duty assignments from current state
+    duties.forEach((duty) => {
+      if (!isUuid(duty.id)) {
+        console.log('[handleConfirmBoard] Skipping mock dutyId save:', duty.id);
         return;
       }
-      if (personId && !isUuid(personId)) {
-        console.log('[handleGenerate] Skipping mock personId save for duty:', personId);
+      if (duty.personId && !isUuid(duty.personId)) {
+        console.log('[handleConfirmBoard] Skipping mock personId save for duty:', duty.personId);
         return;
       }
-      saveDutyAssignment(boardDate, dutyId, personId, shift).catch((err) => {
-        console.error('[handleGenerate] Error saving duty assignment', { dutyId, personId, err });
-      });
+      savePromises.push(
+        saveDutyAssignment(boardDate, duty.id, duty.personId, shift).catch((err) => {
+          console.error('[handleConfirmBoard] Error saving duty assignment', { dutyId: duty.id, personId: duty.personId, err });
+        })
+      );
     });
+
+    try {
+      await Promise.all(savePromises);
+      setConfirmationStatus('Board confirmed and saved successfully.');
+    } catch (error) {
+      console.error('Failed to save board', error);
+      setConfirmationStatus('Some assignments could not be saved.');
+    }
   }
 
   function handleUpdateAvailability(personId: string, availability: Person['availability']) {
@@ -310,10 +358,15 @@ export default function DashboardPage() {
       }))
     );
 
+    // Clear duties too
+    setDuties((currentDuties) =>
+      currentDuties.map((duty) => ({ ...duty, personId: undefined }))
+    );
+
     // Use a small timeout to let state update, then regenerate
     setTimeout(() => {
-      console.log('[DashboardPage] Running handleGenerate after clear');
-      handleGenerate();
+      console.log('[DashboardPage] Running handleAutoGenerate after clear');
+      handleAutoGenerate();
     }, 0);
   }
 
@@ -340,17 +393,9 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleConfirmPrint() {
-    try {
-      setConfirmationStatus('Confirming board in Supabase...');
-      const confirmedBoard = await confirmBoardByDate(formatDateForSupabase(selectedDate), shift);
-      setBoardStatus(confirmedBoard.status);
-      setConfirmationStatus('Board confirmed manually and ready to print');
-      window.print();
-    } catch (error) {
-      console.error('Failed to confirm board', error);
-      setConfirmationStatus('Could not confirm board. Check Supabase permissions.');
-    }
+  // Just print the current board
+  function handlePrint() {
+    window.print();
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -522,7 +567,7 @@ export default function DashboardPage() {
               onAddEvent={handleAddEvent}
               onDeleteEvent={handleDeleteEvent}
             />
-            <BoardActions onGenerate={handleGenerate} onConfirmPrint={handleConfirmPrint} />
+            <BoardActions onAutoGenerate={handleAutoGenerate} onConfirmBoard={handleConfirmBoard} onPrint={handlePrint} />
           </section>
         </DndContext>
       </div>
