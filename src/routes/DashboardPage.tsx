@@ -6,7 +6,7 @@ import BoardActions from '../components/board/BoardActions';
 import RidersBoard from '../components/board/RidersBoard';
 import DateNavigator from '../components/layout/DateNavigator';
 import { mockDuties, mockEvents, mockPeople, mockVehicles } from '../data/mockBoardData';
-import { confirmBoardByDate, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, saveDutyAssignment, saveSeatAssignment } from '../services/boardService';
+import { confirmBoardByDate, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, getPersonTotalRides, saveDutyAssignment, saveSeatAssignment } from '../services/boardService';
 import { createCalendarEvent, deleteCalendarEvent } from '../services/eventService';
 import { getDashboardData, getEventsByDate } from '../services/dashboardDataService';
 import { buildMockHistory, generateBoardAssignments, generateDutyAssignments } from '../services/seatAssignmentService';
@@ -107,10 +107,11 @@ export default function DashboardPage() {
 
       try {
         const boardDate = formatDateForSupabase(selectedDate);
-        const [board, seatAssignments, dutyAssignments] = await Promise.all([
+        const [board, seatAssignments, dutyAssignments, totalRides] = await Promise.all([
           getBoardByDate(boardDate, shift),
           getBoardAssignments(boardDate, shift),
           getBoardDutyAssignments(boardDate, shift),
+          getPersonTotalRides(), // Get total historical rides for all people
         ]);
 
         if (!isMounted) {
@@ -145,11 +146,11 @@ export default function DashboardPage() {
           }),
         );
 
-        // Reset rides count since we're on a new date with fresh assignments
+        // Set rides count to TOTAL historical rides from database (not just today)
         setPeople((currentPeople) =>
           currentPeople.map((person) => ({
             ...person,
-            rides: 0,
+            rides: totalRides[person.id] ?? 0,
           })),
         );
       } catch (error) {

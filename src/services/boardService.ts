@@ -191,3 +191,49 @@ export async function confirmBoardByDate(date: string, shift: string = 'Day') {
   return confirmBoard(board.id);
 }
 
+// Get total ride count for each person across all historical board assignments
+export async function getPersonTotalRides(): Promise<Record<string, number>> {
+  try {
+    // Get all seat assignments from all boards (excluding null person_id)
+    const { data: seatData, error: seatError } = await (supabase
+      .from('board_seat_assignments') as any)
+      .select('person_id')
+      .not('person_id', 'is', null);
+
+    if (seatError) {
+      console.error('Error fetching seat assignments for rides count:', seatError);
+      return {};
+    }
+
+    // Get all duty assignments from all boards (excluding null person_id)
+    const { data: dutyData, error: dutyError } = await (supabase
+      .from('board_duty_assignments') as any)
+      .select('person_id')
+      .not('person_id', 'is', null);
+
+    if (dutyError) {
+      console.error('Error fetching duty assignments for rides count:', dutyError);
+      return {};
+    }
+
+    // Count rides per person
+    const ridesCount: Record<string, number> = {};
+
+    const seatAssignments = (seatData ?? []) as Array<{ person_id: string }>;
+    const dutyAssignments = (dutyData ?? []) as Array<{ person_id: string }>;
+
+    seatAssignments.forEach((assignment) => {
+      ridesCount[assignment.person_id] = (ridesCount[assignment.person_id] ?? 0) + 1;
+    });
+
+    dutyAssignments.forEach((assignment) => {
+      ridesCount[assignment.person_id] = (ridesCount[assignment.person_id] ?? 0) + 1;
+    });
+
+    return ridesCount;
+  } catch (error) {
+    console.error('Failed to get person total rides:', error);
+    return {};
+  }
+}
+
