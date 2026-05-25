@@ -27,7 +27,9 @@ export default function VehicleBlock({ vehicle, people }: VehicleBlockProps) {
                   <span>{getPersonName(people, seat.personId)}</span>
                 </DraggablePerson>
               ) : (
-                <span className="text-ink/40">Drop crew here</span>
+                <span className="text-ink/60 font-black">
+                  {seat.label === 'ECO' ? '' : 'SBY'}
+                </span>
               )}
             </DroppableSeat>
           </div>

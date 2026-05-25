@@ -52,9 +52,9 @@ export const mockPeople: Person[] = [
 ];
 
 export const mockDuties: Duty[] = [
-  { id: 'mess', label: 'Mess / Tea' },
+  { id: 'mess', label: 'Mess/Tea' },
   { id: 'watchroom', label: 'Watchroom' },
-  { id: 'bollies', label: 'Boilers' },
+  { id: 'boilers', label: 'Boilers' },
 ];
 
 export const mockEvents: CalendarEvent[] = [];
