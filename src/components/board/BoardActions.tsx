@@ -2,10 +2,15 @@ type BoardActionsProps = {
   onAutoGenerate?: () => void;
   onConfirmBoard: () => void;
   onPrint: () => void;
+  isBoardEmpty?: boolean;
 };
 
-export default function BoardActions({ onAutoGenerate, onConfirmBoard, onPrint }: BoardActionsProps) {
+export default function BoardActions({ onAutoGenerate, onConfirmBoard, onPrint, isBoardEmpty = false }: BoardActionsProps) {
   const handleConfirmClick = () => {
+    if (isBoardEmpty) {
+      window.alert('Cannot confirm an empty board. Please add at least one assignment first.');
+      return;
+    }
     const confirmed = window.confirm('Are you sure you want to confirm and save this board?');
     if (confirmed) {
       onConfirmBoard();
@@ -26,7 +31,12 @@ export default function BoardActions({ onAutoGenerate, onConfirmBoard, onPrint }
       <button
         type="button"
         onClick={handleConfirmClick}
-        className="bg-red-600 px-8 py-4 shadow-xl transition hover:bg-red-700 sm:px-12"
+        disabled={isBoardEmpty}
+        className={`px-8 py-4 shadow-xl transition sm:px-12 ${
+          isBoardEmpty
+            ? 'cursor-not-allowed bg-gray-500 opacity-50'
+            : 'bg-red-600 hover:bg-red-700'
+        }`}
       >
         Confirm Board
       </button>

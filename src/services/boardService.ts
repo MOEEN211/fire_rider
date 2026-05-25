@@ -196,30 +196,47 @@ export async function getPersonTotalRides(): Promise<Record<string, number>> {
   try {
     console.log('[getPersonTotalRides] Fetching all historical assignments...');
 
-    // Get all seat assignments from all boards (excluding null person_id)
+    // First get all boards to check what we have access to
+    const { data: boardsData, error: boardsError } = await (supabase.from('boards') as any)
+      .select('id');
+
+    if (boardsError) {
+      console.error('[getPersonTotalRides] Error fetching boards:', boardsError);
+      return {};
+    }
+
+    const boardIds = (boardsData ?? []).map((b: { id: string }) => b.id);
+    console.log('[getPersonTotalRides] Available board IDs:', boardIds.length);
+
+    if (boardIds.length === 0) {
+      console.log('[getPersonTotalRides] No boards found, returning empty counts');
+      return {};
+    }
+
+    // Get seat assignments for all accessible boards
     const { data: seatData, error: seatError } = await (supabase
       .from('board_seat_assignments') as any)
-      .select('person_id')
+      .select('person_id, board_id')
+      .in('board_id', boardIds)
       .not('person_id', 'is', null);
 
     if (seatError) {
       console.error('[getPersonTotalRides] Error fetching seat assignments:', seatError);
-      return {};
     }
 
-    // Get all duty assignments from all boards (excluding null person_id)
+    // Get duty assignments for all accessible boards
     const { data: dutyData, error: dutyError } = await (supabase
       .from('board_duty_assignments') as any)
-      .select('person_id')
+      .select('person_id, board_id')
+      .in('board_id', boardIds)
       .not('person_id', 'is', null);
 
     if (dutyError) {
       console.error('[getPersonTotalRides] Error fetching duty assignments:', dutyError);
-      return {};
     }
 
-    console.log('[getPersonTotalRides] Seat assignments count:', seatData?.length ?? 0);
-    console.log('[getPersonTotalRides] Duty assignments count:', dutyData?.length ?? 0);
+    console.log('[getPersonTotalRides] Seat assignments found:', seatData?.length ?? 0);
+    console.log('[getPersonTotalRides] Duty assignments found:', dutyData?.length ?? 0);
 
     // Count rides per person
     const ridesCount: Record<string, number> = {};
@@ -228,14 +245,18 @@ export async function getPersonTotalRides(): Promise<Record<string, number>> {
     const dutyAssignments = (dutyData ?? []) as Array<{ person_id: string }>;
 
     seatAssignments.forEach((assignment) => {
-      ridesCount[assignment.person_id] = (ridesCount[assignment.person_id] ?? 0) + 1;
+      if (assignment.person_id) {
+        ridesCount[assignment.person_id] = (ridesCount[assignment.person_id] ?? 0) + 1;
+      }
     });
 
     dutyAssignments.forEach((assignment) => {
-      ridesCount[assignment.person_id] = (ridesCount[assignment.person_id] ?? 0) + 1;
+      if (assignment.person_id) {
+        ridesCount[assignment.person_id] = (ridesCount[assignment.person_id] ?? 0) + 1;
+      }
     });
 
-    console.log('[getPersonTotalRides] Calculated rides count:', ridesCount);
+    console.log('[getPersonTotalRides] Final calculated rides count:', ridesCount);
     return ridesCount;
   } catch (error) {
     console.error('[getPersonTotalRides] Failed to get person total rides:', error);

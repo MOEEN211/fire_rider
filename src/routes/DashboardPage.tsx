@@ -582,7 +582,12 @@ export default function DashboardPage() {
               onAddEvent={handleAddEvent}
               onDeleteEvent={handleDeleteEvent}
             />
-            <BoardActions onAutoGenerate={handleAutoGenerate} onConfirmBoard={handleConfirmBoard} onPrint={handlePrint} />
+            <BoardActions
+              onAutoGenerate={handleAutoGenerate}
+              onConfirmBoard={handleConfirmBoard}
+              onPrint={handlePrint}
+              isBoardEmpty={!vehicles.some((v) => v.seats.some((s) => s.personId)) && !duties.some((d) => d.personId)}
+            />
           </section>
         </DndContext>
       </div>
