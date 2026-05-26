@@ -419,6 +419,8 @@ export function generateBoardAssignments(
  * Only FF rank eligible.
  * NOTE: Duties are an independent layer - people can be assigned to multiple duties
  * concurrently alongside vehicle assignments (41P1, 41P2, 41A8).
+ * 
+ * However, we should distribute duties among FF people for fairness.
  */
 export function generateDutyAssignments(
   duties: Duty[],
@@ -436,23 +438,35 @@ export function generateDutyAssignments(
     return assignments;
   }
 
-  // Independent layer - each duty picks the best candidate regardless of other duty assignments
+  // Track assigned duty count to distribute fairly
+  const dutyCount: Record<string, number> = {};
+  ffPeople.forEach(p => dutyCount[p.id] = 0);
+
+  // Sort duties by priority (if any) - process in order
   for (const duty of duties) {
     console.log(`[generateDutyAssignments] Assigning duty: ${duty.label} (${duty.id})`);
     
-    const scored = ffPeople.map((p) => ({
-      person: p,
-      score: scoreCandidate(p, duty.id, history),
-    }));
+    // Score all candidates based on time since last + duty count penalty
+    const scored = ffPeople.map((p) => {
+      const timeScore = scoreCandidate(p, duty.id, history);
+      // Add penalty for each duty already assigned (to distribute duties)
+      const distributionPenalty = (dutyCount[p.id] || 0) * 1000;
+      return {
+        person: p,
+        score: timeScore + distributionPenalty,
+      };
+    });
+    
     scored.sort((a, b) => a.score - b.score);
 
     console.log(`[generateDutyAssignments] Scored candidates for ${duty.label}:`, 
-      scored.map(s => ({ name: s.person.name, score: s.score })));
+      scored.map(s => ({ name: s.person.name, score: s.score, duties: dutyCount[s.person.id] })));
 
     if (scored.length > 0) {
       const best = scored[0].person;
       assignments[duty.id] = best.id;
-      console.log(`[generateDutyAssignments] Assigned ${best.name} to ${duty.label}`);
+      dutyCount[best.id] = (dutyCount[best.id] || 0) + 1;
+      console.log(`[generateDutyAssignments] Assigned ${best.name} to ${duty.label} (now has ${dutyCount[best.id]} duties)`);
     }
   }
 
