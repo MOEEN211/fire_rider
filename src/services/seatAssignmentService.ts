@@ -19,6 +19,8 @@ export const PUMP_SEAT_REQUIREMENTS: Record<string, SeatRequirement> = {
   OIC: { label: 'OIC', requiredSkills: ['OIC'], requiredRanks: ['WC', 'CC'], excludedRanks: ['FF'] },
   DRIVER: { label: 'DRIVER', requiredSkills: ['LGVE'], excludedRanks: ['WC'] },
   BA: { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
+  'BA 1': { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
+  'BA 2': { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
   ECO: { label: 'ECO', requiredSkills: ['BA'], ffPriority: true },
 };
 
@@ -308,10 +310,15 @@ export function generateBoardAssignments(
     }
   }
 
-  // Pull 41A8 Driver from 41P2 (any seat, not OIC)
+  // Pull 41A8 Driver from 41P2 (any seat, not OIC, and NOT already picked for a8OIC)
   if (a8Driver) {
+    const a8OicPersonId = assignments[a8OIC?.id ?? ''];
     const p2Assignments = Object.entries(assignments).filter(
-      ([seatId, personId]) => personId && p2SeatIds.includes(seatId) && seatId !== p2OIC?.id
+      ([seatId, personId]) => 
+        personId && 
+        p2SeatIds.includes(seatId) && 
+        seatId !== p2OIC?.id &&
+        personId !== a8OicPersonId // Rule: Must be a different person than the OIC
     );
     const candidates = p2Assignments
       .map(([seatId, personId]) => {

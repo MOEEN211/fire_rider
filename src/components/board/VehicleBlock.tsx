@@ -19,7 +19,7 @@ export default function VehicleBlock({ vehicle, people }: VehicleBlockProps) {
         {vehicle.seats.map((seat) => (
           <div key={seat.id} className="grid min-h-8 grid-cols-[78px_1fr] border-b border-ink last:border-b-0">
             <div className="border-r border-ink px-1 py-1 text-[10px] font-black uppercase leading-5">
-              {seat.label}
+              {seat.label.startsWith('BA') ? 'BA' : seat.label}
             </div>
             <DroppableSeat seatId={seat.id}>
               {seat.personId ? (
