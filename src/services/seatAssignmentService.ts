@@ -141,16 +141,18 @@ export function scoreCandidate(
   );
 
   if (!record || record.lastDate === null) {
-    // Never sat in this seat — highest priority, but break ties by fewer rides
-    return Number.MIN_SAFE_INTEGER + person.rides;
+    // Never sat in this seat — highest priority
+    return -1000000;
   }
 
+  // Days since last assignment. We want the person who sat in it longest ago.
+  // Higher daysSince = better candidate. To make "lower score = better", subtract from a large number.
   const daysSince = Math.floor(
-    (Date.now() - record.lastDate.getTime()) / (1000 * 60 * 60 * 24)
+    (new Date().getTime() - new Date(record.lastDate).getTime()) /
+      (1000 * 60 * 60 * 24)
   );
 
-  // Subtract rides as tie-breaker (fewer rides = slightly better)
-  return daysSince - person.rides * 0.1;
+  return 1000 - daysSince;
 }
 
 export function assignSeat(
@@ -212,12 +214,16 @@ export function generateBoardAssignments(
 
   const pickBest = (candidates: Person[], seatId: string): Person | undefined => {
     if (candidates.length === 0) return undefined;
-    const scored = candidates.map((p) => ({
-      person: p,
-      score: scoreCandidate(p, seatId, history),
-    }));
-    scored.sort((a, b) => a.score - b.score);
-    return scored[0].person;
+    
+    return [...candidates].sort((a, b) => {
+      const scoreA = scoreCandidate(a, seatId, history);
+      const scoreB = scoreCandidate(b, seatId, history);
+      
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      
+      // Rule 10: Tie on time → fewer total rides
+      return a.rides - b.rides;
+    })[0];
   };
 
   const tryAssign = (
@@ -246,11 +252,12 @@ export function generateBoardAssignments(
     return true;
   };
 
+  const getSeatsByLabel = (vehicle: Vehicle, label: string): Seat[] =>
+    vehicle.seats.filter((s) => s.label === label);
+
   // === PHASE 1: 41P1 Core Crew ===
   const p1OIC = getSeat(v41P1, 'OIC');
   const p1Driver = getSeat(v41P1, 'DRIVER');
-  const p1BA1 = getSeat(v41P1, 'BA');
-  const p1BA2 = getSeat(v41P1, 'BA');
   const p1ECO = getSeat(v41P1, 'ECO');
 
   // Rule 9: WC must be in OIC seat
@@ -261,22 +268,21 @@ export function generateBoardAssignments(
   } else {
     tryAssign(p1OIC, (p) => p.skills.includes('OIC') && (p.rank === 'WC' || p.rank === 'CC'));
   }
-
   tryAssign(p1Driver, (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
-  tryAssign(p1BA1, (p) => p.skills.includes('BA'), true);
-  tryAssign(p1BA2, (p) => p.skills.includes('BA'), true);
+  
+  // Rule 2 & 5: Handle multiple BA seats correctly
+  getSeatsByLabel(v41P1, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
   // === PHASE 2: 41P2 Core Crew ===
   const p2OIC = getSeat(v41P2, 'OIC');
   const p2Driver = getSeat(v41P2, 'DRIVER');
-  const p2BA1 = getSeat(v41P2, 'BA');
-  const p2BA2 = getSeat(v41P2, 'BA');
   const p2ECO = getSeat(v41P2, 'ECO');
 
   tryAssign(p2OIC, (p) => p.skills.includes('OIC') && (p.rank === 'WC' || p.rank === 'CC'));
   tryAssign(p2Driver, (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
-  tryAssign(p2BA1, (p) => p.skills.includes('BA'), true);
-  tryAssign(p2BA2, (p) => p.skills.includes('BA'), true);
+  
+  // Handle multiple BA seats for P2
+  getSeatsByLabel(v41P2, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
   // === PHASE 3: 41A8 — crewed ONLY from 41P2 pool (Rule 4) ===
   const a8OIC = getSeat(v41A8, 'OIC');
@@ -292,21 +298,18 @@ export function generateBoardAssignments(
     const candidates = p2Assignments
       .map(([seatId, personId]) => {
         const person = people.find((p) => p.id === personId);
-        return person && person.skills.includes('TTO') ? { person, seatId } : null;
+        // Rule: Re-use eligibility rules (isEligibleForSeat) for ladder check
+        return person && isEligibleForSeat(person, 'OIC', true) ? { person, seatId } : null;
       })
       .filter((x): x is { person: Person; seatId: string } => x !== null);
 
     if (candidates.length > 0) {
-      const scored = candidates.map((c) => ({
-        ...c,
-        score: scoreCandidate(c.person, a8OIC.id, history),
-      }));
-      scored.sort((a, b) => a.score - b.score);
-      const best = scored[0];
-
-      assignments[a8OIC.id] = best.person.id;
-      // Keep on 41P2 as well per new rule
-      // delete assignments[best.seatId];
+      const best = pickBest(candidates.map(c => c.person), a8OIC.id);
+      if (best) {
+        assignments[a8OIC.id] = best.id;
+        // Also add to assigned set to ensure they aren't somehow reused elsewhere
+        assignedPersonIds.add(best.id);
+      }
     }
   }
 
@@ -323,21 +326,17 @@ export function generateBoardAssignments(
     const candidates = p2Assignments
       .map(([seatId, personId]) => {
         const person = people.find((p) => p.id === personId);
-        return person && person.skills.includes('LGVETL') ? { person, seatId } : null;
+        // Rule: Re-use eligibility rules (isEligibleForSeat) for ladder check
+        return person && isEligibleForSeat(person, 'DRIVER', true) ? { person, seatId } : null;
       })
       .filter((x): x is { person: Person; seatId: string } => x !== null);
 
     if (candidates.length > 0) {
-      const scored = candidates.map((c) => ({
-        ...c,
-        score: scoreCandidate(c.person, a8Driver.id, history),
-      }));
-      scored.sort((a, b) => a.score - b.score);
-      const best = scored[0];
-
-      assignments[a8Driver.id] = best.person.id;
-      // Keep on 41P2 as well per new rule
-      // delete assignments[best.seatId];
+      const best = pickBest(candidates.map(c => c.person), a8Driver.id);
+      if (best) {
+        assignments[a8Driver.id] = best.id;
+        assignedPersonIds.add(best.id);
+      }
     }
   }
 
