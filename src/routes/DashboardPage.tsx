@@ -549,8 +549,14 @@ export default function DashboardPage() {
 
           <DragOverlay zIndex={1000}>
             {activePerson ? (
-              <div className="bg-white text-slate-900 px-3 py-2 border-2 border-ink shadow-xl font-black uppercase text-[11px] pointer-events-none">
-                {activePerson.name}
+              <div 
+                className="bg-white text-slate-900 px-3 py-2 border-2 border-ink shadow-xl font-black uppercase text-[11px] whitespace-nowrap"
+                style={{
+                  transform: 'translate(-50%, -50%)',
+                  position: 'relative',
+                }}
+              >
+                {activePerson.rank} {activePerson.name}
               </div>
             ) : null}
           </DragOverlay>
