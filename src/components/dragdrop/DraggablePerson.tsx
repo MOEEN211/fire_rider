@@ -14,8 +14,7 @@ export default function DraggablePerson({ personId, disabled = false, children }
   });
 
   const style: CSSProperties = {
-    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    opacity: isDragging ? 0 : 1,
+    opacity: isDragging ? 0.3 : 1,
     cursor: disabled ? 'default' : 'grab',
     touchAction: 'none',
   };
