@@ -6,7 +6,7 @@ import BoardActions from '../components/board/BoardActions';
 import RidersBoard from '../components/board/RidersBoard';
 import DateNavigator from '../components/layout/DateNavigator';
 import { mockDuties, mockEvents, mockPeople, mockVehicles } from '../data/mockBoardData';
-import { confirmBoardByDate, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, getPersonTotalRides, saveDutyAssignment, saveSeatAssignment } from '../services/boardService';
+import { confirmBoardByDate, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, getPersonTotalRides, getPersonRidesForDate, getRosterAssignments, saveDutyAssignment, saveRosterAssignment, saveSeatAssignment } from '../services/boardService';
 import { createCalendarEvent, deleteCalendarEvent } from '../services/eventService';
 import { getDashboardData, getEventsByDate } from '../services/dashboardDataService';
 import { buildMockHistory, generateBoardAssignments, generateDutyAssignments } from '../services/seatAssignmentService';
@@ -107,11 +107,16 @@ export default function DashboardPage() {
 
       try {
         const boardDate = formatDateForSupabase(selectedDate);
-        const [board, seatAssignments, dutyAssignments, totalRides] = await Promise.all([
+        const prevDate = new Date(selectedDate);
+        prevDate.setDate(prevDate.getDate() - 1);
+        const prevDateStr = formatDateForSupabase(prevDate);
+
+        const [board, seatAssignments, dutyAssignments, prevDayRides, rosterAssignments] = await Promise.all([
           getBoardByDate(boardDate, shift),
           getBoardAssignments(boardDate, shift),
           getBoardDutyAssignments(boardDate, shift),
-          getPersonTotalRides(), // Get total historical rides for all people
+          getPersonRidesForDate(prevDateStr), // Get rides from the previous day
+          getRosterAssignments(boardDate), // Get availability for this date
         ]);
 
         if (!isMounted) {
@@ -126,7 +131,7 @@ export default function DashboardPage() {
             ...vehicle,
             seats: vehicle.seats.map((seat) => {
               // Only assign if there's a saved assignment for THIS date
-              const savedAssignment = seatAssignments.find((assignment) => assignment.seat_id === seat.id);
+              const savedAssignment = seatAssignments.find((assignment: any) => assignment.seat_id === seat.id);
               return {
                 ...seat,
                 personId: savedAssignment?.person_id ?? undefined,
@@ -138,7 +143,7 @@ export default function DashboardPage() {
         // Reset duties to empty first, then load saved data for this date
         setDuties((currentDuties) =>
           currentDuties.map((duty) => {
-            const saved = dutyAssignments.find((a) => a.duty_id === duty.id);
+            const saved = dutyAssignments.find((a: any) => a.duty_id === duty.id);
             return {
               ...duty,
               personId: saved?.person_id ?? undefined,
@@ -146,16 +151,17 @@ export default function DashboardPage() {
           }),
         );
 
-        // Set rides count to TOTAL historical rides from database (not just today)
-        console.log('[loadSavedBoardState] Setting rides count. TotalRides:', totalRides);
+        // Set rides count to counts from PREVIOUS day as requested
+        console.log('[loadSavedBoardState] Setting rides count. PrevDayRides:', prevDayRides);
         setPeople((currentPeople) => {
-          console.log('[loadSavedBoardState] Current people count:', currentPeople.length);
           return currentPeople.map((person) => {
-            const rides = totalRides[person.id] ?? 0;
-            console.log(`[loadSavedBoardState] Person ${person.name} (${person.id}): rides = ${rides}`);
+            const rides = prevDayRides[person.id] ?? 0;
+            const savedAvailability = rosterAssignments[person.id] as any;
+            
             return {
               ...person,
               rides,
+              availability: savedAvailability ?? 'On Duty',
             };
           });
         });
@@ -171,24 +177,6 @@ export default function DashboardPage() {
     };
   }, [selectedDate, dataSource, shift]);
 
-  useEffect(() => {
-    // Recalculate rides count from current vehicle assignments
-    const ridesCount = new Map<string, number>();
-    vehicles.forEach((vehicle) => {
-      vehicle.seats.forEach((seat) => {
-        if (seat.personId) {
-          ridesCount.set(seat.personId, (ridesCount.get(seat.personId) ?? 0) + 1);
-        }
-      });
-    });
-
-    setPeople((currentPeople) =>
-      currentPeople.map((person) => ({
-        ...person,
-        rides: ridesCount.get(person.id) ?? 0,
-      })),
-    );
-  }, [vehicles]);
 
   useEffect(() => {
     let isMounted = true;
@@ -341,6 +329,15 @@ export default function DashboardPage() {
       savePromises.push(
         saveDutyAssignment(boardDate, duty.id, duty.personId, shift).catch((err) => {
           console.error('[handleConfirmBoard] Error saving duty assignment', { dutyId: duty.id, personId: duty.personId, err });
+        })
+      );
+    });
+
+    // Save person availability status from current state
+    people.forEach((person) => {
+      savePromises.push(
+        saveRosterAssignment(boardDate, person.id, person.availability).catch((err) => {
+          console.error('[handleConfirmBoard] Error saving availability', { personId: person.id, availability: person.availability, err });
         })
       );
     });

@@ -15,6 +15,11 @@ export type SupabaseBoardSeatAssignment = {
   updated_at: string;
 };
 
+export type SupabaseRosterAssignment = {
+  person_id: string;
+  availability: string;
+};
+
 export type SupabaseBoard = {
   id: string;
   date: string;
@@ -191,6 +196,88 @@ export async function confirmBoardByDate(date: string, shift: string = 'Day') {
   return confirmBoard(board.id);
 }
 
+export async function getOrCreateRosterDay(date: string): Promise<string> {
+  // First check if it exists
+  const { data: existing, error: findError } = await supabase
+    .from('roster_days')
+    .select('id')
+    .eq('date', date)
+    .maybeSingle();
+
+  if (existing) return (existing as any).id;
+
+  // Need station_id for new roster_day
+  const { data: station } = await supabase
+    .from('stations')
+    .select('id')
+    .eq('location_code', 'GREEN-WATCH')
+    .single();
+
+  if (!station) throw new Error('Station not found');
+
+  const { data: newDay, error: insertError } = await (supabase.from('roster_days') as any)
+    .insert({
+      date,
+      station_id: (station as any).id,
+      source_system: 'Manual',
+    })
+    .select('id')
+    .single();
+
+  if (insertError) {
+    console.error('[getOrCreateRosterDay] Error:', insertError);
+    throw insertError;
+  }
+
+  return (newDay as any).id;
+}
+
+export async function getRosterAssignments(date: string): Promise<Record<string, string>> {
+  const { data: rosterDay } = await supabase
+    .from('roster_days')
+    .select('id')
+    .eq('date', date)
+    .maybeSingle();
+
+  if (!rosterDay) return {};
+
+  const { data, error } = await supabase
+    .from('roster_assignments')
+    .select('person_id, duty_status')
+    .eq('roster_day_id', (rosterDay as any).id);
+
+  if (error) {
+    console.error('[getRosterAssignments] Error:', error);
+    return {};
+  }
+
+  const map: Record<string, string> = {};
+  (data ?? []).forEach((row: any) => {
+    map[row.person_id] = row.duty_status;
+  });
+  return map;
+}
+
+export async function saveRosterAssignment(date: string, personId: string, availability: string) {
+  const rosterDayId = await getOrCreateRosterDay(date);
+
+  const { error } = await (supabase.from('roster_assignments') as any)
+    .upsert(
+      {
+        roster_day_id: rosterDayId,
+        person_id: personId,
+        duty_status: availability,
+        available_for_seating: availability === 'On Duty',
+      },
+      { onConflict: 'roster_day_id,person_id' }
+    );
+
+  if (error) {
+    console.error(`[saveRosterAssignment] Failed for person ${personId}:`, error);
+    throw error;
+  }
+}
+
 // Get total ride count for each person across all historical board assignments
 export async function getPersonTotalRides(): Promise<Record<string, number>> {
   try {
@@ -264,3 +351,28 @@ export async function getPersonTotalRides(): Promise<Record<string, number>> {
   }
 }
 
+export async function getPersonRidesForDate(date: string): Promise<Record<string, number>> {
+  try {
+    const { data: boardsData } = await (supabase.from('boards') as any)
+      .select('id')
+      .eq('date', date);
+
+    const boardIds = (boardsData ?? []).map((b: { id: string }) => b.id);
+    if (boardIds.length === 0) return {};
+
+    const [seatRes, dutyRes] = await Promise.all([
+      supabase.from('board_seat_assignments').select('person_id').in('board_id', boardIds).not('person_id', 'is', null),
+      supabase.from('board_duty_assignments').select('person_id').in('board_id', boardIds).not('person_id', 'is', null),
+    ]);
+
+    const counts: Record<string, number> = {};
+    [...(seatRes.data ?? []), ...(dutyRes.data ?? [])].forEach((a: any) => {
+      if (a.person_id) counts[a.person_id] = (counts[a.person_id] ?? 0) + 1;
+    });
+
+    return counts;
+  } catch (error) {
+    console.error('[getPersonRidesForDate] Error:', error);
+    return {};
+  }
+}
