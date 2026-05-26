@@ -33,6 +33,8 @@ export type SkillCode = 'OIC' | 'BA' | 'LGVE' | 'LGVETL' | 'TTO';
 
 export type RankCode = 'WC' | 'CC' | 'FF';
 
+export type DutyStatusCode = 'On Duty' | 'On Leave' | 'Sick' | 'Training' | 'Other';
+
 export type Person = {
   id: string;
   marker: string;
@@ -40,7 +42,7 @@ export type Person = {
   name: string;
   staffNumber: string;
   skills: SkillCode[];
-  dutyStatus: string;
+  dutyStatus: DutyStatusCode;
   rides: number;
   availability: AvailabilityCode;
 };

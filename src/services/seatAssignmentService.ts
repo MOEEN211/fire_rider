@@ -1,4 +1,4 @@
-import type { Person, Seat, Vehicle, AvailabilityCode } from '../types/board';
+import type { Person, Seat, Vehicle, AvailabilityCode, Duty } from '../types/board';
 
 export type SeatRequirement = {
   label: string;
@@ -19,8 +19,6 @@ export const PUMP_SEAT_REQUIREMENTS: Record<string, SeatRequirement> = {
   OIC: { label: 'OIC', requiredSkills: ['OIC'], requiredRanks: ['WC', 'CC'], excludedRanks: ['FF'] },
   DRIVER: { label: 'DRIVER', requiredSkills: ['LGVE'], excludedRanks: ['WC'] },
   BA: { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
-  'BA 1': { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
-  'BA 2': { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
   ECO: { label: 'ECO', requiredSkills: ['BA'], ffPriority: true },
 };
 
@@ -68,14 +66,18 @@ const UNAVAILABLE_CODES: AvailabilityCode[] = [
 ];
 
 export function isAvailable(person: Person): boolean {
+  if (UNAVAILABLE_CODES.includes(person.availability)) {
+    return false;
+  }
   return person.availability === 'On Duty';
 }
 
 function getSeatRequirements(seatLabel: string, isLadder: boolean): SeatRequirement | undefined {
+  const baseLabel = seatLabel.replace(/\s\d+$/, '');
   if (isLadder) {
-    return LADDER_SEAT_REQUIREMENTS[seatLabel];
+    return LADDER_SEAT_REQUIREMENTS[baseLabel] || LADDER_SEAT_REQUIREMENTS[seatLabel];
   }
-  return PUMP_SEAT_REQUIREMENTS[seatLabel];
+  return PUMP_SEAT_REQUIREMENTS[baseLabel] || PUMP_SEAT_REQUIREMENTS[seatLabel];
 }
 
 export function isEligibleForSeat(person: Person, seatLabel: string, isLadder: boolean = false): boolean {
@@ -378,7 +380,7 @@ export function generateBoardAssignments(
  * based on longest time since last duty assignment.
  */
 export function generateDutyAssignments(
-  duties: { id: string; label: string }[],
+  duties: Duty[],
   people: Person[],
   history: AssignmentHistory[] = [],
   excludedPersonIds: Set<string> = new Set()
