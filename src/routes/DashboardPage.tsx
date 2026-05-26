@@ -386,6 +386,24 @@ export default function DashboardPage() {
     handleAutoGenerate();
   }
 
+  async function handleClearSeat(seatId: string) {
+    setVehicles((currentVehicles) =>
+      currentVehicles.map((vehicle) => ({
+        ...vehicle,
+        seats: vehicle.seats.map((seat) =>
+          seat.id === seatId ? { ...seat, personId: undefined } : seat
+        ),
+      }))
+    );
+
+    try {
+      const boardDate = formatDateForSupabase(selectedDate);
+      await saveSeatAssignment(boardDate, seatId, undefined, shift);
+    } catch (err) {
+      console.error('Failed to clear seat', err);
+    }
+  }
+
   async function handleAddEvent(time: string, title: string) {
     try {
       const boardDate = formatDateForSupabase(selectedDate);
@@ -538,6 +556,7 @@ export default function DashboardPage() {
               standbyAssignments={standbyAssignments}
               onAddEvent={handleAddEvent}
               onDeleteEvent={handleDeleteEvent}
+              onClearSeat={handleClearSeat}
             />
             <BoardActions
               onAutoGenerate={handleAutoGenerate}

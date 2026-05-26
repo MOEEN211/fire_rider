@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import type { Person, Vehicle } from '../../types/board';
 import DroppableSeat from '../dragdrop/DroppableSeat';
 import DraggablePerson from '../dragdrop/DraggablePerson';
@@ -6,9 +7,10 @@ import { getPersonName } from '../../utils/people';
 type VehicleBlockProps = {
   vehicle: Vehicle;
   people: Person[];
+  onClearSeat?: (seatId: string) => void;
 };
 
-export default function VehicleBlock({ vehicle, people }: VehicleBlockProps) {
+export default function VehicleBlock({ vehicle, people, onClearSeat }: VehicleBlockProps) {
   return (
     <section className="border-2 border-ink">
       <div className="border-b-2 border-ink text-center text-[10px] font-black leading-5">
@@ -38,7 +40,7 @@ export default function VehicleBlock({ vehicle, people }: VehicleBlockProps) {
                 {group.seats.map((seat, sIdx) => (
                   <div
                     key={seat.id}
-                    className="flex min-h-[32px] items-center border-b border-ink last:border-b-0 px-1 py-1"
+                    className="group flex min-h-[32px] items-center border-b border-ink last:border-b-0 px-1 py-1"
                   >
                     <DroppableSeat seatId={seat.id}>
                       {seat.personId ? (
@@ -51,6 +53,15 @@ export default function VehicleBlock({ vehicle, people }: VehicleBlockProps) {
                         </span>
                       )}
                     </DroppableSeat>
+                    {seat.personId && onClearSeat && (
+                      <button
+                        onClick={() => onClearSeat(seat.id)}
+                        className="ml-1 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 shrink-0 no-print"
+                        title="Clear seat"
+                      >
+                        <X size={12} className="text-red-600" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
