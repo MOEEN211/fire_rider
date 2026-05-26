@@ -158,11 +158,11 @@ export default function DashboardPage() {
         // Apply roster/availability assignments to people
         setPeople((current) =>
           current.map((p) => {
-            const roster = ((rosterAssignments as unknown) as any[]).find((ra) => ra.person_id === p.id);
+            const status = rosterAssignments[p.id];
             return {
               ...p,
-              availability: roster ? (roster.duty_status_code as any) : 'On Duty',
-              dutyStatus: roster ? (roster.duty_status_code as any) : 'On Duty',
+              availability: status ?? 'On Duty',
+              dutyStatus: status ?? 'On Duty',
             };
           }),
         );
@@ -340,11 +340,11 @@ export default function DashboardPage() {
       const rosterAssignments = await getRosterAssignments(boardDate);
       setPeople((current) =>
         current.map((p) => {
-          const roster = rosterAssignments.find((ra) => ra.person_id === p.id);
+          const status = rosterAssignments[p.id];
           return {
             ...p,
-            availability: roster ? (roster.duty_status_code as any) : 'On Duty',
-            dutyStatus: roster ? (roster.duty_status_code as any) : 'On Duty',
+            availability: status ?? 'On Duty',
+            dutyStatus: status ?? 'On Duty',
           };
         }),
       );
