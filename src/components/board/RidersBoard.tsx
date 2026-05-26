@@ -30,7 +30,7 @@ export default function RidersBoard({ selectedDate, shift, onShiftChange, isOffD
       )}
 
       <header className="mb-4 text-center">
-        <h2 className="text-xl font-black uppercase">Green Watch Riders moeen</h2>
+        <h2 className="text-xl font-black uppercase">Green Watch Riders</h2>
         <div className="mt-5 flex items-center justify-between text-xs font-black">
           <div className="flex items-center gap-3 pl-14">
             <span>Date:</span>
