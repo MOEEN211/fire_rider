@@ -111,16 +111,16 @@ export async function getDashboardData(): Promise<DashboardData> {
       })),
   }));
 
-  const people = ((peopleResult.data ?? []) as SupabasePerson[]).map((person, index) => ({
+  const people: Person[] = ((peopleResult.data ?? []) as SupabasePerson[]).map((person, index) => ({
     id: person.id,
     marker: index < 2 ? 'O/T/H/O' : '',
-    rank: (person.rank ?? '') as RankCode,
+    rank: (person.rank as RankCode) || 'FF',
     name: person.full_name ?? '',
     staffNumber: person.staff_number ?? '',
     skills: (skillMap.get(person.id) ?? []) as SkillCode[],
-    dutyStatus: 'On Duty' as const,
+    dutyStatus: 'On Duty',
     rides: 0,
-    availability: 'On Duty' as const,
+    availability: 'On Duty',
   }));
 
   const duties = ((dutiesResult.data ?? []) as SupabaseDuty[]).map((duty) => ({
