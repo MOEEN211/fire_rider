@@ -118,7 +118,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     name: person.full_name ?? '',
     staffNumber: person.staff_number ?? '',
     skills: (skillMap.get(person.id) ?? []) as SkillCode[],
-    dutyStatus: 'On duty',
+    dutyStatus: 'On Duty' as const,
     rides: 0,
     availability: 'On Duty' as const,
   }));
