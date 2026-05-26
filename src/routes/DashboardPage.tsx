@@ -257,8 +257,15 @@ export default function DashboardPage() {
 
     setVehicles(updatedVehicles);
 
-    // Generate duty assignments (Rule 6: rotate fairly between FF rank)
-    const dutyAssignments = generateDutyAssignments(duties, people, history);
+    // Collect all people assigned to vehicle seats so they aren't assigned to duties
+    const assignedRiderIds = new Set(
+      Object.entries(seatAssignments)
+        .filter(([_, personId]) => !!personId)
+        .map(([_, personId]) => personId as string)
+    );
+
+    // Generate duty assignments (Rule 6: rotate fairly between FF rank, excluding people already on vehicles)
+    const dutyAssignments = generateDutyAssignments(duties, people, history, assignedRiderIds);
     console.log('[handleAutoGenerate] dutyAssignments:', dutyAssignments);
 
     const updatedDuties = duties.map((duty) => ({

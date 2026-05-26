@@ -381,10 +381,11 @@ export function generateBoardAssignments(
 export function generateDutyAssignments(
   duties: { id: string; label: string }[],
   people: Person[],
-  history: AssignmentHistory[] = []
+  history: AssignmentHistory[] = [],
+  excludedPersonIds: Set<string> = new Set()
 ): Record<string, string | undefined> {
   const assignments: Record<string, string | undefined> = {};
-  const assignedPersonIds = new Set<string>();
+  const assignedPersonIds = new Set<string>(excludedPersonIds);
 
   // Only FF rank eligible for duties
   const ffPeople = people.filter((p) => p.rank === 'FF' && isAvailable(p));
