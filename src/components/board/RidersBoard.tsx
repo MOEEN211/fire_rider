@@ -39,11 +39,29 @@ export default function RidersBoard({ selectedDate, shift, isOffDuty = false, sh
           </div>
           <div className="flex items-center gap-2 pr-4">
             <span className="text-[10px] font-bold uppercase tracking-wide text-ink/70">
-              {shiftLabel ?? shift}
+              {shiftLabel ?? 'Shift'}
             </span>
-            <span className="text-[12px] font-black uppercase border-2 border-ink bg-ink text-board px-3 py-0.5 min-w-[70px] text-center">
-              {shift}
-            </span>
+            <div className="flex items-center gap-1 pointer-events-none opacity-80">
+              <span
+                className={`text-[12px] font-black uppercase border-2 px-3 py-0.5 min-w-[70px] text-center transition-colors ${
+                  shift === 'Day'
+                    ? 'border-ink bg-ink text-board'
+                    : 'border-ink/40 bg-transparent text-ink/40'
+                }`}
+              >
+                DAY
+              </span>
+              <span className="text-ink/40 text-[10px]">/</span>
+              <span
+                className={`text-[12px] font-black uppercase border-2 px-3 py-0.5 min-w-[70px] text-center transition-colors ${
+                  shift === 'Night'
+                    ? 'border-ink bg-ink text-board'
+                    : 'border-ink/40 bg-transparent text-ink/40'
+                }`}
+              >
+                NIGHT
+              </span>
+            </div>
           </div>
         </div>
       </header>
