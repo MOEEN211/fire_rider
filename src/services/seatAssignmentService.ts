@@ -339,6 +339,8 @@ export function generateBoardAssignments(
 /**
  * Fair rotation for station duties (Mess, Watchroom, Boilers)
  * Only FF rank eligible.
+ * NOTE: Duties are an independent layer - people can be assigned to multiple duties
+ * concurrently alongside vehicle assignments (41P1, 41P2, 41A8).
  */
 export function generateDutyAssignments(
   duties: Duty[],
@@ -346,16 +348,15 @@ export function generateDutyAssignments(
   history: AssignmentHistory[]
 ): Record<string, string | undefined> {
   const assignments: Record<string, string | undefined> = {};
-  const assignedPersonIds = new Set<string>();
 
   // Only FF rank eligible for duties
   const ffPeople = people.filter((p) => p.rank === 'FF' && isAvailable(p));
 
+  // Independent layer - each duty picks the best candidate regardless of other duty assignments
   for (const duty of duties) {
-    const eligible = ffPeople.filter((p) => !assignedPersonIds.has(p.id));
-    if (eligible.length === 0) continue;
+    if (ffPeople.length === 0) continue;
 
-    const scored = eligible.map((p) => ({
+    const scored = ffPeople.map((p) => ({
       person: p,
       score: scoreCandidate(p, duty.id, history),
     }));
@@ -363,7 +364,6 @@ export function generateDutyAssignments(
 
     const best = scored[0].person;
     assignments[duty.id] = best.id;
-    assignedPersonIds.add(best.id);
   }
 
   console.log('[generateDutyAssignments] Result:', assignments);
