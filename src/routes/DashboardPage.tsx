@@ -345,25 +345,40 @@ export default function DashboardPage() {
     window.print();
   }
 
-  async function handleUpdateAvailability(personId: string, status: any) {
+  async function handleUpdateAvailability(personId: string, newStatus: any) {
     try {
-      const boardDate = formatDateForSupabase(selectedDate);
-      await saveRosterAssignment(boardDate, personId, status);
+      console.log(`[handleUpdateAvailability] Updating ${personId} to ${newStatus}`);
       
-      // Refresh people list from DB
+      // Update local state immediately for better UX
+      setPeople((current) =>
+        current.map((p) =>
+          p.id === personId
+            ? { ...p, availability: newStatus as any, dutyStatus: newStatus as any }
+            : p
+        ),
+      );
+      
+      const boardDate = formatDateForSupabase(selectedDate);
+      await saveRosterAssignment(boardDate, personId, newStatus);
+      console.log('[handleUpdateAvailability] Saved to DB');
+      
+      // Refresh people list from DB to sync
       const rosterAssignments = await getRosterAssignments(boardDate);
+      console.log('[handleUpdateAvailability] Refreshed from DB:', rosterAssignments);
+      
       setPeople((current) =>
         current.map((p) => {
-          const status = rosterAssignments[p.id];
+          const refreshedStatus = rosterAssignments[p.id];
           return {
             ...p,
-            availability: (status ?? 'On Duty') as any,
-            dutyStatus: (status ?? 'On Duty') as any,
+            availability: (refreshedStatus ?? 'On Duty') as any,
+            dutyStatus: (refreshedStatus ?? 'On Duty') as any,
           };
         }),
       );
     } catch (error) {
       console.error('Failed to update availability', error);
+      alert('Failed to save availability. Please try again.');
     }
   }
 
