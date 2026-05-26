@@ -501,6 +501,7 @@ export default function DashboardPage() {
             <RidersBoard
               selectedDate={selectedDate}
               shift={shift}
+              isOffDuty={isOffDuty}
               vehicles={vehicles}
               people={people}
               duties={duties}
