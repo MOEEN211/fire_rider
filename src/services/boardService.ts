@@ -272,7 +272,6 @@ export async function saveRosterAssignment(date: string, personId: string, avail
           person_id: personId,
           duty_status: availability,
           available_for_seating: availability === 'On Duty',
-          updated_at: new Date().toISOString(),
         },
         { onConflict: 'roster_day_id,person_id' }
       )
