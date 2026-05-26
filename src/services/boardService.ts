@@ -259,22 +259,36 @@ export async function getRosterAssignments(date: string): Promise<Record<string,
 }
 
 export async function saveRosterAssignment(date: string, personId: string, availability: string) {
-  const rosterDayId = await getOrCreateRosterDay(date);
+  console.log(`[saveRosterAssignment] Starting for person ${personId}, availability: ${availability}, date: ${date}`);
+  
+  try {
+    const rosterDayId = await getOrCreateRosterDay(date);
+    console.log(`[saveRosterAssignment] Got rosterDayId: ${rosterDayId}`);
 
-  const { error } = await (supabase.from('roster_assignments') as any)
-    .upsert(
-      {
-        roster_day_id: rosterDayId,
-        person_id: personId,
-        duty_status: availability,
-        available_for_seating: availability === 'On Duty',
-      },
-      { onConflict: 'roster_day_id,person_id' }
-    );
+    const { data, error } = await (supabase.from('roster_assignments') as any)
+      .upsert(
+        {
+          roster_day_id: rosterDayId,
+          person_id: personId,
+          duty_status: availability,
+          available_for_seating: availability === 'On Duty',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'roster_day_id,person_id' }
+      )
+      .select()
+      .single();
 
-  if (error) {
-    console.error(`[saveRosterAssignment] Failed for person ${personId}:`, error);
-    throw error;
+    if (error) {
+      console.error(`[saveRosterAssignment] Failed for person ${personId}:`, error);
+      throw new Error(`Database error: ${error.message || error.code || JSON.stringify(error)}`);
+    }
+    
+    console.log(`[saveRosterAssignment] Success for person ${personId}:`, data);
+    return data;
+  } catch (err) {
+    console.error(`[saveRosterAssignment] Exception for person ${personId}:`, err);
+    throw err;
   }
 }
 
