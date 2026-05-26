@@ -130,22 +130,36 @@ export default function DashboardPage() {
           setBoardStatus('');
         }
 
+        // Convert seat assignments array to Record for lookup
+        const seatAssignmentMap: Record<string, string | undefined> = {};
+        (seatAssignments as any[]).forEach((assignment: any) => {
+          seatAssignmentMap[assignment.seat_id] = assignment.person_id ?? undefined;
+        });
+        console.log('[loadSavedBoardState] Seat assignments loaded:', seatAssignmentMap);
+
         // Apply seat assignments to vehicles
         setVehicles((current) =>
           current.map((v) => ({
             ...v,
             seats: v.seats.map((s) => ({
               ...s,
-              personId: ((seatAssignments as unknown) as Record<string, string>)[s.id],
+              personId: seatAssignmentMap[s.id],
             })),
           })),
         );
+
+        // Convert duty assignments array to Record for lookup
+        const dutyAssignmentMap: Record<string, string | undefined> = {};
+        (dutyAssignments as any[]).forEach((assignment: any) => {
+          dutyAssignmentMap[assignment.duty_id] = assignment.person_id ?? undefined;
+        });
+        console.log('[loadSavedBoardState] Duty assignments loaded:', dutyAssignmentMap);
 
         // Apply duty assignments
         setDuties((current) =>
           current.map((duty) => ({
             ...duty,
-            personId: ((dutyAssignments as unknown) as Record<string, string>)[duty.id],
+            personId: dutyAssignmentMap[duty.id],
           })),
         );
 
