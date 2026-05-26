@@ -17,9 +17,10 @@ type RidersBoardProps = {
   onAddEvent: (time: string, title: string) => void;
   onDeleteEvent?: (eventId: string) => void;
   onClearSeat?: (seatId: string) => void;
+  onClearDuty?: (dutyId: string) => void;
 };
 
-export default function RidersBoard({ selectedDate, shift, isOffDuty = false, shiftLabel, vehicles, people, duties, events, standbyAssignments, onAddEvent, onDeleteEvent, onClearSeat }: RidersBoardProps) {
+export default function RidersBoard({ selectedDate, shift, isOffDuty = false, shiftLabel, vehicles, people, duties, events, standbyAssignments, onAddEvent, onDeleteEvent, onClearSeat, onClearDuty }: RidersBoardProps) {
   return (
     <main className="riders-board relative mx-auto w-[min(94vw,760px)] border-4 border-ink bg-board p-5 text-ink shadow-paper print:shadow-none sm:p-7">
       {isOffDuty && (
@@ -75,7 +76,7 @@ export default function RidersBoard({ selectedDate, shift, isOffDuty = false, sh
             <VehicleBlock vehicle={vehicles[2]} people={people} onClearSeat={onClearSeat} />
           </div>
           <div className="mt-3">
-            <DutiesBlock duties={duties} people={people} />
+            <DutiesBlock duties={duties} people={people} onClearDuty={onClearDuty} />
           </div>
         </div>
 

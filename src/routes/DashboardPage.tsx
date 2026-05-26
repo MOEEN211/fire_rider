@@ -404,6 +404,21 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleClearDuty(dutyId: string) {
+    setDuties((current) =>
+      current.map((duty) =>
+        duty.id === dutyId ? { ...duty, personId: undefined } : duty
+      )
+    );
+
+    try {
+      const boardDate = formatDateForSupabase(selectedDate);
+      await saveDutyAssignment(boardDate, dutyId, undefined, shift);
+    } catch (err) {
+      console.error('Failed to clear duty', err);
+    }
+  }
+
   async function handleAddEvent(time: string, title: string) {
     try {
       const boardDate = formatDateForSupabase(selectedDate);
@@ -557,6 +572,7 @@ export default function DashboardPage() {
               onAddEvent={handleAddEvent}
               onDeleteEvent={handleDeleteEvent}
               onClearSeat={handleClearSeat}
+              onClearDuty={handleClearDuty}
             />
             <BoardActions
               onAutoGenerate={handleAutoGenerate}
