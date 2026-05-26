@@ -161,8 +161,8 @@ export default function DashboardPage() {
             const status = rosterAssignments[p.id];
             return {
               ...p,
-              availability: status ?? 'On Duty',
-              dutyStatus: status ?? 'On Duty',
+              availability: (status as any) ?? 'On Duty',
+              dutyStatus: (status as any) ?? 'On Duty',
             };
           }),
         );
