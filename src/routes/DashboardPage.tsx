@@ -23,7 +23,8 @@ export default function DashboardPage() {
   const [people, setPeople] = useState<Person[]>(mockPeople);
   const [duties, setDuties] = useState<Duty[]>(mockDuties);
   const [events, setEvents] = useState<CalendarEvent[]>(mockEvents);
-  const [dataSource, setDataSource] = useState<'loading' | 'supabase' | 'mock'>('loading');
+  const [dataSource, setDataSource] = useState<'mock' | 'supabase' | 'loading'>('loading');
+  const [historicalRides, setHistoricalRides] = useState<Record<string, number>>({});
   const [confirmationStatus, setConfirmationStatus] = useState('');
   const [boardStatus, setBoardStatus] = useState('');
   const [shift, setShift] = useState<'Day' | 'Night'>('Day');
@@ -107,15 +108,11 @@ export default function DashboardPage() {
 
       try {
         const boardDate = formatDateForSupabase(selectedDate);
-        const prevDate = new Date(selectedDate);
-        prevDate.setDate(prevDate.getDate() - 1);
-        const prevDateStr = formatDateForSupabase(prevDate);
-
-        const [board, seatAssignments, dutyAssignments, prevDayRides, rosterAssignments] = await Promise.all([
+        const [board, seatAssignments, dutyAssignments, totalRides, rosterAssignments] = await Promise.all([
           getBoardByDate(boardDate, shift),
           getBoardAssignments(boardDate, shift),
           getBoardDutyAssignments(boardDate, shift),
-          getPersonRidesForDate(prevDateStr), // Get rides from the previous day
+          getPersonTotalRides(), // Get total historical rides for all people
           getRosterAssignments(boardDate), // Get availability for this date
         ]);
 
@@ -151,11 +148,13 @@ export default function DashboardPage() {
           }),
         );
 
-        // Set rides count to counts from PREVIOUS day as requested
-        console.log('[loadSavedBoardState] Setting rides count. PrevDayRides:', prevDayRides);
+        // Store historical rides count from database
+        console.log('[loadSavedBoardState] Storing historical rides count:', totalRides);
+        setHistoricalRides(totalRides);
+        
         setPeople((currentPeople) => {
           return currentPeople.map((person) => {
-            const rides = prevDayRides[person.id] ?? 0;
+            const rides = totalRides[person.id] ?? 0;
             const savedAvailability = rosterAssignments[person.id] as any;
             
             return {
@@ -170,12 +169,42 @@ export default function DashboardPage() {
       }
     }
 
-    loadSavedBoardState();
+        loadSavedBoardState();
 
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedDate, dataSource, shift]);
+        return () => {
+          isMounted = false;
+        };
+      }, [selectedDate, dataSource, shift]);
+
+  // Combine historical rides from DB + current assignments on board
+  useEffect(() => {
+    const currentAssignments = new Map<string, number>();
+    
+    vehicles.forEach((v) => {
+      v.seats.forEach((s) => {
+        if (s.personId) {
+          currentAssignments.set(s.personId, (currentAssignments.get(s.personId) ?? 0) + 1);
+        }
+      });
+    });
+    
+    duties.forEach((d) => {
+      if (d.personId) {
+        currentAssignments.set(d.personId, (currentAssignments.get(d.personId) ?? 0) + 1);
+      }
+    });
+
+    setPeople((currentPeople) =>
+      currentPeople.map((person) => {
+        const history = historicalRides[person.id] ?? 0;
+        const current = currentAssignments.get(person.id) ?? 0;
+        return {
+          ...person,
+          rides: history + current,
+        };
+      })
+    );
+  }, [vehicles, duties, historicalRides]);
 
 
   useEffect(() => {
