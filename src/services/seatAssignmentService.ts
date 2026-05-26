@@ -342,53 +342,48 @@ export function generateBoardAssignments(
   });
 
   // === LAYER 2: SPECIALIST (41A8) ===
-  // === LAYER 2: SPECIALIST (41A8) ===
-  // True independent layer — can overlap with Pumps as requested
+  // 41A8 crew MUST come from 41P2 only (not 41P1)
   if (v41A8) {
     const a8OIC = getSeat(v41A8, 'OIC');
     const a8Driver = getSeat(v41A8, 'DRIVER');
     
-    // Find all eligible OIC candidates (not assigned to ladder yet, have TTO or OIC)
-    const oicCandidates = people.filter(p => 
-      !assignedToLadder.has(p.id) && 
-      isAvailable(p) && 
-      (p.skills.includes('TTO') || p.skills.includes('OIC'))
-    );
-    console.log('[41A8] OIC candidates:', oicCandidates.map(p => p.name));
+    // Get the list of people assigned to 41P2
+    const p2AssignedPeople = v41P2.seats
+      .map(seat => assignments[seat.id])
+      .filter((id): id is string => !!id)
+      .map(id => people.find(p => p.id === id))
+      .filter((p): p is Person => !!p);
     
-    // Find all eligible Driver candidates (not assigned to ladder yet, have LGVETL)
-    const driverCandidates = people.filter(p => 
-      !assignedToLadder.has(p.id) && 
-      isAvailable(p) && 
+    console.log('[41A8] 41P2 assigned people:', p2AssignedPeople.map(p => p.name));
+    
+    // Find eligible OIC from 41P2 crew only (must have TTO or OIC skill)
+    const p2OICCands = p2AssignedPeople.filter(p => 
+      p.skills.includes('TTO') || p.skills.includes('OIC')
+    );
+    console.log('[41A8] P2 OIC candidates:', p2OICCands.map(p => p.name));
+    
+    // Find eligible Driver from 41P2 crew only (must have LGVETL)
+    const p2DriverCands = p2AssignedPeople.filter(p => 
       p.skills.includes('LGVETL')
     );
-    console.log('[41A8] Driver candidates:', driverCandidates.map(p => p.name));
+    console.log('[41A8] P2 Driver candidates:', p2DriverCands.map(p => p.name));
     
-    // Pick OIC (independent of P1/P2 assignments)
-    if (a8OIC && oicCandidates.length > 0) {
-      const bestOIC = pickBest(oicCandidates, a8OIC.id);
+    // Assign 41A8 OIC from P2 crew
+    if (a8OIC && p2OICCands.length > 0) {
+      const bestOIC = pickBest(p2OICCands, a8OIC.id);
       if (bestOIC) {
         assignments[a8OIC.id] = bestOIC.id;
-        assignedToLadder.add(bestOIC.id);
-        console.log('[41A8] Assigned OIC:', bestOIC.name);
+        console.log('[41A8] Assigned OIC from P2:', bestOIC.name);
       }
     }
     
-    // Pick Driver (independent of P1/P2 assignments, but exclude OIC person)
-    // Re-filter to exclude the OIC person who was just added
-    const driverCandidatesAfterOIC = people.filter(p => 
-      !assignedToLadder.has(p.id) && 
-      isAvailable(p) && 
-      p.skills.includes('LGVETL')
-    );
-    console.log('[41A8] Driver candidates after OIC assigned:', driverCandidatesAfterOIC.map(p => p.name));
-    
-    if (a8Driver && driverCandidatesAfterOIC.length > 0) {
-      const bestDriver = pickBest(driverCandidatesAfterOIC, a8Driver.id);
+    // Assign 41A8 Driver from P2 crew (different person from OIC)
+    const p2DriverCandsExclOIC = p2DriverCands.filter(p => p.id !== assignments[a8OIC?.id ?? '']);
+    if (a8Driver && p2DriverCandsExclOIC.length > 0) {
+      const bestDriver = pickBest(p2DriverCandsExclOIC, a8Driver.id);
       if (bestDriver) {
         assignments[a8Driver.id] = bestDriver.id;
-        assignedToLadder.add(bestDriver.id);
-        console.log('[41A8] Assigned Driver:', bestDriver.name);
+        console.log('[41A8] Assigned Driver from P2:', bestDriver.name);
       }
     }
   }
@@ -400,16 +395,31 @@ export function generateBoardAssignments(
   // Try assign P1 ECO first
   if (p1ECO && !assignments[p1ECO.id]) {
     tryAssign(p1ECO, (p) => p.skills.includes('BA'), true);
-    // Rule 8: No skillset → ECO on 41P1
+    // If no BA available, use anyone (including no-skill people like Kian Macdonald)
     if (!assignments[p1ECO.id]) {
-      tryAssign(p1ECO, (p) => p.skills.length === 0, false);
+      tryAssign(p1ECO, (p) => true, false);
     }
   }
   
-  // Then try assign P2 ECO
+  // Then try assign P2 ECO - must fill this seat
   if (p2ECO && !assignments[p2ECO.id]) {
     tryAssign(p2ECO, (p) => p.skills.includes('BA'), true);
+    // If no BA available, use ANY available person
+    if (!assignments[p2ECO.id]) {
+      tryAssign(p2ECO, (p) => true, false);
+    }
   }
+
+  // === LAYER 4: Final backfill - ensure ALL seats filled ===
+  // Fill any remaining empty seats with any available person
+  [v41P1, v41P2].forEach(v => {
+    v.seats.forEach(seat => {
+      if (!assignments[seat.id]) {
+        console.log(`[Final Backfill] Filling empty seat ${seat.label} on ${v.name}`);
+        tryAssign(seat, (p) => true, false);
+      }
+    });
+  });
 
   return assignments;
 }
@@ -420,7 +430,8 @@ export function generateBoardAssignments(
  * NOTE: Duties are an independent layer - people can be assigned to multiple duties
  * concurrently alongside vehicle assignments (41P1, 41P2, 41A8).
  * 
- * However, we should distribute duties among FF people for fairness.
+ * Implements strict rotation: tracks duty history and penalizes recent assignments
+ * to ensure duties are distributed fairly among all FF people over time.
  */
 export function generateDutyAssignments(
   duties: Duty[],
@@ -438,35 +449,53 @@ export function generateDutyAssignments(
     return assignments;
   }
 
-  // Track assigned duty count to distribute fairly
+  // Track how many duties each person gets this round
   const dutyCount: Record<string, number> = {};
   ffPeople.forEach(p => dutyCount[p.id] = 0);
 
-  // Sort duties by priority (if any) - process in order
+  // For each duty, find the best candidate with strong rotation logic
   for (const duty of duties) {
     console.log(`[generateDutyAssignments] Assigning duty: ${duty.label} (${duty.id})`);
     
-    // Score all candidates based on time since last + duty count penalty
+    // Score all candidates - lower score = better candidate
     const scored = ffPeople.map((p) => {
+      // Base score from time since last assignment to this specific duty
       const timeScore = scoreCandidate(p, duty.id, history);
-      // Add penalty for each duty already assigned (to distribute duties)
-      const distributionPenalty = (dutyCount[p.id] || 0) * 1000;
+      
+      // Strong penalty for each duty already assigned this round
+      const currentDutyPenalty = (dutyCount[p.id] || 0) * 5000;
+      
+      // Additional penalty for any recent duty assignment (from history)
+      const recentDutyHistory = history.filter(h => 
+        h.personId === p.id && h.seatId.startsWith(duty.id.substring(0, 4))
+      );
+      const recentDutyPenalty = recentDutyHistory.length * 100;
+      
+      const totalScore = timeScore + currentDutyPenalty + recentDutyPenalty;
+      
       return {
         person: p,
-        score: timeScore + distributionPenalty,
+        score: totalScore,
+        breakdown: { timeScore, currentDutyPenalty, recentDutyPenalty }
       };
     });
     
+    // Sort by score ascending (lowest = best)
     scored.sort((a, b) => a.score - b.score);
 
     console.log(`[generateDutyAssignments] Scored candidates for ${duty.label}:`, 
-      scored.map(s => ({ name: s.person.name, score: s.score, duties: dutyCount[s.person.id] })));
+      scored.map(s => ({ 
+        name: s.person.name, 
+        score: s.score, 
+        dutiesThisRound: dutyCount[s.person.id],
+        breakdown: s.breakdown
+      })));
 
     if (scored.length > 0) {
       const best = scored[0].person;
       assignments[duty.id] = best.id;
       dutyCount[best.id] = (dutyCount[best.id] || 0) + 1;
-      console.log(`[generateDutyAssignments] Assigned ${best.name} to ${duty.label} (now has ${dutyCount[best.id]} duties)`);
+      console.log(`[generateDutyAssignments] Assigned ${best.name} to ${duty.label} (now has ${dutyCount[best.id]} duties this round)`);
     }
   }
 
