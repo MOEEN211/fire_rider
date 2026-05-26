@@ -376,3 +376,67 @@ export async function getPersonRidesForDate(date: string): Promise<Record<string
     return {};
   }
 }
+export async function getStandbyAssignments(date: string, shift: string = 'Day'): Promise<(string | undefined)[]> {
+  const board = await getOrCreateBoard(date, shift);
+  const { data, error } = await supabase
+    .from('standby_assignments')
+    .select('person_id, position')
+    .eq('board_id', board.id);
+
+  if (error) throw error;
+  
+  const results = new Array(18).fill(undefined);
+  (data ?? []).forEach((row: any) => {
+    if (row.position >= 0 && row.position < 18) {
+      results[row.position] = row.person_id;
+    }
+  });
+  return results;
+}
+
+export async function saveStandbyAssignment(date: string, position: number, personId?: string, shift: string = 'Day') {
+  const board = await getOrCreateBoard(date, shift);
+  const { error } = await (supabase.from('standby_assignments') as any)
+    .upsert(
+      {
+        board_id: board.id,
+        person_id: personId ?? null,
+        position,
+      },
+      { onConflict: 'board_id,position' }
+    );
+  if (error) throw error;
+}
+
+export async function getAssignmentHistory(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('board_seat_assignments')
+    .select(`
+      person_id,
+      seat_id,
+      boards (date)
+    `)
+    .not('person_id', 'is', null);
+
+  if (error) {
+    console.error('[getAssignmentHistory] Error:', error);
+    return [];
+  }
+
+  // Group by person+seat and find max date
+  const historyMap = new Map<string, Date>();
+  ((data ?? []) as any[]).forEach((row: any) => {
+    if (!row.boards || !row.person_id || !row.seat_id) return;
+    const key = `${row.person_id}_${row.seat_id}`;
+    const date = new Date(row.boards.date);
+    const existing = historyMap.get(key);
+    if (!existing || date > existing) {
+      historyMap.set(key, date);
+    }
+  });
+
+  return Array.from(historyMap.entries()).map(([key, lastDate]) => {
+    const [personId, seatId] = key.split('_');
+    return { personId, seatId, lastDate };
+  });
+}

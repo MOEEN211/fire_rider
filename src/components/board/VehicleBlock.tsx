@@ -18,14 +18,16 @@ export default function VehicleBlock({ vehicle, people }: VehicleBlockProps) {
       <div>
         {(() => {
           const groups: { label: string; seats: any[] }[] = [];
-          vehicle.seats.forEach((seat) => {
-            const displayLabel = seat.label.startsWith('BA') ? 'BA' : seat.label;
-            if (groups.length > 0 && groups[groups.length - 1].label === displayLabel) {
-              groups[groups.length - 1].seats.push(seat);
-            } else {
-              groups.push({ label: displayLabel, seats: [seat] });
-            }
-          });
+          [...vehicle.seats]
+            .sort((a, b) => (a as any).display_order - (b as any).display_order)
+            .forEach((seat) => {
+              const displayLabel = seat.label.replace(/\s?\d+$/, '');
+              if (groups.length > 0 && groups[groups.length - 1].label === displayLabel) {
+                groups[groups.length - 1].seats.push(seat);
+              } else {
+                groups.push({ label: displayLabel, seats: [seat] });
+              }
+            });
 
           return groups.map((group, gIdx) => (
             <div key={gIdx} className="grid grid-cols-[78px_1fr] border-b border-ink last:border-b-0">

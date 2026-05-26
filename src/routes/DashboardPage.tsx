@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DndContext, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent } from '@dnd-kit/core';
+import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { addDays, subDays } from 'date-fns';
 import AbsenceManager from '../components/board/AbsenceManager';
 import BoardActions from '../components/board/BoardActions';
 import RidersBoard from '../components/board/RidersBoard';
 import DateNavigator from '../components/layout/DateNavigator';
 import { mockDuties, mockEvents, mockPeople, mockVehicles } from '../data/mockBoardData';
-import { confirmBoardByDate, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, getPersonTotalRides, getPersonRidesForDate, getRosterAssignments, saveDutyAssignment, saveRosterAssignment, saveSeatAssignment } from '../services/boardService';
+import { confirmBoardByDate, getAssignmentHistory, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, getPersonTotalRides, getPersonRidesForDate, getRosterAssignments, getStandbyAssignments, saveDutyAssignment, saveRosterAssignment, saveSeatAssignment, saveStandbyAssignment } from '../services/boardService';
 import { createCalendarEvent, deleteCalendarEvent } from '../services/eventService';
 import { getDashboardData, getEventsByDate } from '../services/dashboardDataService';
 import { buildMockHistory, generateBoardAssignments, generateDutyAssignments } from '../services/seatAssignmentService';
@@ -29,6 +30,7 @@ export default function DashboardPage() {
   const [boardStatus, setBoardStatus] = useState('');
   const [shift, setShift] = useState<'Day' | 'Night'>('Day');
   const [isOffDuty, setIsOffDuty] = useState(false);
+  const [standbyAssignments, setStandbyAssignments] = useState<(string | undefined)[]>(new Array(16).fill(undefined));
 
   // Auto-calculate shift from the 4-on-4-off pattern whenever date changes
   useEffect(() => {
@@ -98,6 +100,7 @@ export default function DashboardPage() {
     };
   }, []);
 
+  // Load saved board state for selected date
   useEffect(() => {
     let isMounted = true;
 
@@ -108,10 +111,11 @@ export default function DashboardPage() {
 
       try {
         const boardDate = formatDateForSupabase(selectedDate);
-        const [board, seatAssignments, dutyAssignments, totalRides, rosterAssignments] = await Promise.all([
+        const [board, seatAssignments, dutyAssignments, savedStandby, totalRides, rosterAssignments] = await Promise.all([
           getBoardByDate(boardDate, shift),
           getBoardAssignments(boardDate, shift),
           getBoardDutyAssignments(boardDate, shift),
+          getStandbyAssignments(boardDate, shift),
           getPersonTotalRides(), // Get total historical rides for all people
           getRosterAssignments(boardDate), // Get availability for this date
         ]);
@@ -120,77 +124,75 @@ export default function DashboardPage() {
           return;
         }
 
-        setBoardStatus(board?.status ?? 'Draft');
+        if (board) {
+          setBoardStatus(board.status === 'Confirmed' ? 'Confirmed' : 'Draft');
+        } else {
+          setBoardStatus('');
+        }
 
-        // Reset all assignments to empty first, then load saved data for this date
-        setVehicles((currentVehicles) =>
-          currentVehicles.map((vehicle) => ({
-            ...vehicle,
-            seats: vehicle.seats.map((seat) => {
-              // Only assign if there's a saved assignment for THIS date
-              const savedAssignment = seatAssignments.find((assignment: any) => assignment.seat_id === seat.id);
-              return {
-                ...seat,
-                personId: savedAssignment?.person_id ?? undefined,
-              };
-            }),
+        // Apply seat assignments to vehicles
+        setVehicles((current) =>
+          current.map((v) => ({
+            ...v,
+            seats: v.seats.map((s) => ({
+              ...s,
+              personId: ((seatAssignments as unknown) as Record<string, string>)[s.id],
+            })),
           })),
         );
 
-        // Reset duties to empty first, then load saved data for this date
-        setDuties((currentDuties) =>
-          currentDuties.map((duty) => {
-            const saved = dutyAssignments.find((a: any) => a.duty_id === duty.id);
-            return {
-              ...duty,
-              personId: saved?.person_id ?? undefined,
-            };
-          }),
+        // Apply duty assignments
+        setDuties((current) =>
+          current.map((duty) => ({
+            ...duty,
+            personId: ((dutyAssignments as unknown) as Record<string, string>)[duty.id],
+          })),
         );
+
+        setStandbyAssignments(savedStandby);
 
         // Store historical rides count from database
         console.log('[loadSavedBoardState] Storing historical rides count:', totalRides);
         setHistoricalRides(totalRides);
-        
-        setPeople((currentPeople) => {
-          return currentPeople.map((person) => {
-            const rides = totalRides[person.id] ?? 0;
-            const savedAvailability = rosterAssignments[person.id] as any;
-            
+
+        // Apply roster/availability assignments to people
+        setPeople((current) =>
+          current.map((p) => {
+            const roster = ((rosterAssignments as unknown) as any[]).find((ra) => ra.person_id === p.id);
             return {
-              ...person,
-              rides,
-              availability: savedAvailability ?? 'On Duty',
+              ...p,
+              availability: roster ? (roster.duty_status_code as any) : 'On Duty',
+              dutyStatus: roster ? (roster.duty_status_code as any) : 'On Duty',
             };
-          });
-        });
+          }),
+        );
       } catch (error) {
-        console.error('Failed to load saved board assignments', error);
+        console.error('Failed to load saved board state', error);
       }
     }
 
-        loadSavedBoardState();
+    loadSavedBoardState();
 
-        return () => {
-          isMounted = false;
-        };
-      }, [selectedDate, dataSource, shift]);
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedDate, shift, dataSource]);
 
-  // Combine historical rides from DB + current assignments on board
+  // Track people rides in current view
   useEffect(() => {
     const currentAssignments = new Map<string, number>();
-    
-    vehicles.forEach((v) => {
-      v.seats.forEach((s) => {
-        if (s.personId) {
-          currentAssignments.set(s.personId, (currentAssignments.get(s.personId) ?? 0) + 1);
+
+    vehicles.forEach((vehicle) => {
+      vehicle.seats.forEach((seat) => {
+        if (seat.personId) {
+          currentAssignments.set(seat.personId, (currentAssignments.get(seat.personId) ?? 0) + 1);
         }
       });
     });
-    
-    duties.forEach((d) => {
-      if (d.personId) {
-        currentAssignments.set(d.personId, (currentAssignments.get(d.personId) ?? 0) + 1);
+
+    duties.forEach((duty) => {
+      if (duty.personId) {
+        currentAssignments.set(duty.personId, (currentAssignments.get(duty.personId) ?? 0) + 1);
       }
     });
 
@@ -238,66 +240,53 @@ export default function DashboardPage() {
   }, [selectedDate, dataSource]);
 
   // Auto-generate board assignments following all rules
-  function handleAutoGenerate() {
-    console.log('[handleAutoGenerate] people:', people);
-    console.log('[handleAutoGenerate] vehicles:', vehicles);
-    const history = buildMockHistory(people, vehicles, duties);
+  async function handleAutoGenerate() {
+    console.log('[handleAutoGenerate] Starting generation...');
+    setConfirmationStatus('Generating optimal board...');
+    
+    try {
+      const history = await getAssignmentHistory();
+      
+      // Generate seat assignments
+      const seatAssignments = generateBoardAssignments(vehicles, people, history);
+      console.log('[handleAutoGenerate] seatAssignments:', seatAssignments);
 
-    // Generate seat assignments
-    const seatAssignments = generateBoardAssignments(vehicles, people, history);
-    console.log('[handleAutoGenerate] seatAssignments:', seatAssignments);
+      const updatedVehicles = vehicles.map((vehicle) => ({
+        ...vehicle,
+        seats: vehicle.seats.map((seat) => ({
+          ...seat,
+          personId: seatAssignments[seat.id],
+        })),
+      }));
 
-    const updatedVehicles = vehicles.map((vehicle) => ({
-      ...vehicle,
-      seats: vehicle.seats.map((seat) => ({
-        ...seat,
-        personId: seatAssignments[seat.id],
-      })),
-    }));
+      setVehicles(updatedVehicles);
 
-    setVehicles(updatedVehicles);
+      // Generate duty assignments (Rule 6: rotate fairly between FF rank)
+      const dutyAssignments = generateDutyAssignments(duties, people, history);
+      console.log('[handleAutoGenerate] dutyAssignments:', dutyAssignments);
 
-    // Collect all people assigned to vehicle seats so they aren't assigned to duties
-    const assignedRiderIds = new Set(
-      Object.entries(seatAssignments)
-        .filter(([_, personId]) => !!personId)
-        .map(([_, personId]) => personId as string)
-    );
+      const updatedDuties = duties.map((duty) => ({
+        ...duty,
+        personId: dutyAssignments[duty.id],
+      }));
 
-    // Generate duty assignments (Rule 6: rotate fairly between FF rank, excluding people already on vehicles)
-    const dutyAssignments = generateDutyAssignments(duties, people, history, assignedRiderIds);
-    console.log('[handleAutoGenerate] dutyAssignments:', dutyAssignments);
+      setDuties(updatedDuties);
 
-    const updatedDuties = duties.map((duty) => ({
-      ...duty,
-      personId: dutyAssignments[duty.id],
-    }));
+      // Update rides count visually for immediate feedback
+      const currentViewRides = new Map<string, number>();
+      updatedVehicles.forEach(v => v.seats.forEach(s => { if(s.personId) currentViewRides.set(s.personId, (currentViewRides.get(s.personId) || 0) + 1); }));
+      updatedDuties.forEach(d => { if(d.personId) currentViewRides.set(d.personId, (currentViewRides.get(d.personId) || 0) + 1); });
 
-    setDuties(updatedDuties);
+      setPeople(prev => prev.map(p => ({
+        ...p,
+        rides: (historicalRides[p.id] || 0) + (currentViewRides.get(p.id) || 0)
+      })));
 
-    // Calculate rides count for each person from both seats and duties
-    const ridesCount = new Map<string, number>();
-    updatedVehicles.forEach((vehicle) => {
-      vehicle.seats.forEach((seat) => {
-        if (seat.personId) {
-          ridesCount.set(seat.personId, (ridesCount.get(seat.personId) ?? 0) + 1);
-        }
-      });
-    });
-    updatedDuties.forEach((duty) => {
-      if (duty.personId) {
-        ridesCount.set(duty.personId, (ridesCount.get(duty.personId) ?? 0) + 1);
-      }
-    });
-
-    setPeople((currentPeople) =>
-      currentPeople.map((person) => ({
-        ...person,
-        rides: ridesCount.get(person.id) ?? 0,
-      })),
-    );
-
-    setConfirmationStatus('Board auto-generated. Click Confirm Board to save.');
+      setConfirmationStatus('Board auto-generated. Click Confirm Board to save.');
+    } catch (err) {
+      console.error('Failed to auto-generate board', err);
+      setConfirmationStatus('Error generating board. Please try again.');
+    }
   }
 
   // Save current board assignments (after editing or auto-generating)
@@ -305,128 +294,79 @@ export default function DashboardPage() {
     console.log('[handleConfirmBoard] Saving current assignments...');
     setConfirmationStatus('Saving board...');
 
-    // Calculate rides count from current state
-    const ridesCount = new Map<string, number>();
-    vehicles.forEach((vehicle) => {
-      vehicle.seats.forEach((seat) => {
-        if (seat.personId) {
-          ridesCount.set(seat.personId, (ridesCount.get(seat.personId) ?? 0) + 1);
-        }
-      });
-    });
-    duties.forEach((duty) => {
-      if (duty.personId) {
-        ridesCount.set(duty.personId, (ridesCount.get(duty.personId) ?? 0) + 1);
-      }
-    });
-
-    setPeople((currentPeople) =>
-      currentPeople.map((person) => ({
-        ...person,
-        rides: ridesCount.get(person.id) ?? 0,
-      })),
-    );
-
-    // Save all assignments to database
-    const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    const boardDate = formatDateForSupabase(selectedDate);
-
-    const savePromises: Promise<unknown>[] = [];
-
-    // Save seat assignments from current state
-    vehicles.forEach((vehicle) => {
-      vehicle.seats.forEach((seat) => {
-        if (!isUuid(seat.id)) {
-          console.log('[handleConfirmBoard] Skipping mock seatId save:', seat.id);
-          return;
-        }
-        if (seat.personId && !isUuid(seat.personId)) {
-          console.log('[handleConfirmBoard] Skipping mock personId save:', seat.personId);
-          return;
-        }
-        savePromises.push(
-          saveSeatAssignment(boardDate, seat.id, seat.personId, shift).catch((err) => {
-            console.error('[handleConfirmBoard] Error saving seat assignment', { seatId: seat.id, personId: seat.personId, err });
-          })
-        );
-      });
-    });
-
-    // Save duty assignments from current state
-    duties.forEach((duty) => {
-      if (!isUuid(duty.id)) {
-        console.log('[handleConfirmBoard] Skipping mock dutyId save:', duty.id);
-        return;
-      }
-      if (duty.personId && !isUuid(duty.personId)) {
-        console.log('[handleConfirmBoard] Skipping mock personId save for duty:', duty.personId);
-        return;
-      }
-      savePromises.push(
-        saveDutyAssignment(boardDate, duty.id, duty.personId, shift).catch((err) => {
-          console.error('[handleConfirmBoard] Error saving duty assignment', { dutyId: duty.id, personId: duty.personId, err });
-        })
-      );
-    });
-
-    // Save person availability status from current state
-    people.forEach((person) => {
-      savePromises.push(
-        saveRosterAssignment(boardDate, person.id, person.availability).catch((err) => {
-          console.error('[handleConfirmBoard] Error saving availability', { personId: person.id, availability: person.availability, err });
-        })
-      );
-    });
-
     try {
-      await Promise.all(savePromises);
-      setConfirmationStatus('Board confirmed and saved successfully.');
+      const boardDate = formatDateForSupabase(selectedDate);
+      
+      // 1. Confirm the board (sets confirmed=true)
+      await confirmBoardByDate(boardDate, shift);
+      
+      // 2. Clear then Save all seat assignments
+      for (const vehicle of vehicles) {
+        for (const seat of vehicle.seats) {
+          await saveSeatAssignment(boardDate, seat.id, seat.personId, shift);
+        }
+      }
+
+      // 3. Save all duty assignments
+      for (const duty of duties) {
+        await saveDutyAssignment(boardDate, duty.id, duty.personId, shift);
+      }
+
+      // 4. Update local state to reflect confirmation
+      setBoardStatus('Confirmed');
+      
+      // 5. Refresh historical rides count
+      const updatedTotalRides = await getPersonTotalRides();
+      setHistoricalRides(updatedTotalRides);
+
+      setConfirmationStatus('Board saved and confirmed successfully!');
+      setTimeout(() => setConfirmationStatus(''), 3000);
     } catch (error) {
-      console.error('Failed to save board', error);
-      setConfirmationStatus('Some assignments could not be saved.');
+      console.error('Failed to confirm board', error);
+      setConfirmationStatus('Failed to save board. Check console for errors.');
     }
   }
 
-  function handleUpdateAvailability(personId: string, availability: Person['availability']) {
-    setPeople((currentPeople) =>
-      currentPeople.map((person) =>
-        person.id === personId ? { ...person, availability } : person
-      )
-    );
+  function handlePrint() {
+    window.print();
+  }
+
+  async function handleUpdateAvailability(personId: string, status: any) {
+    try {
+      const boardDate = formatDateForSupabase(selectedDate);
+      await saveRosterAssignment(boardDate, personId, status);
+      
+      // Refresh people list from DB
+      const rosterAssignments = await getRosterAssignments(boardDate);
+      setPeople((current) =>
+        current.map((p) => {
+          const roster = rosterAssignments.find((ra) => ra.person_id === p.id);
+          return {
+            ...p,
+            availability: roster ? (roster.duty_status_code as any) : 'On Duty',
+            dutyStatus: roster ? (roster.duty_status_code as any) : 'On Duty',
+          };
+        }),
+      );
+    } catch (error) {
+      console.error('Failed to update availability', error);
+    }
   }
 
   function handleRegenerateBoard() {
-    console.log('[DashboardPage] Regenerate board clicked');
-    
-    // Clear existing assignments first, then regenerate with updated availability
-    setVehicles((currentVehicles) =>
-      currentVehicles.map((vehicle) => ({
-        ...vehicle,
-        seats: vehicle.seats.map((seat) => ({ ...seat, personId: undefined })),
-      }))
-    );
-
-    // Clear duties too
-    setDuties((currentDuties) =>
-      currentDuties.map((duty) => ({ ...duty, personId: undefined }))
-    );
-
-    // Use a small timeout to let state update, then regenerate
-    setTimeout(() => {
-      console.log('[DashboardPage] Running handleAutoGenerate after clear');
-      handleAutoGenerate();
-    }, 0);
+    handleAutoGenerate();
   }
 
   async function handleAddEvent(time: string, title: string) {
     try {
       const boardDate = formatDateForSupabase(selectedDate);
-      const newEvent = await createCalendarEvent(boardDate, title, time || undefined);
+      const newEvent = await createCalendarEvent(boardDate, time, title);
       setEvents((current) => [...current, newEvent]);
-      setConfirmationStatus('Note added');
+      setConfirmationStatus('Note added.');
+      setTimeout(() => setConfirmationStatus(''), 2000);
     } catch (error) {
-      console.error('Failed to add note', error);
-      setConfirmationStatus('Could not add note to Supabase');
+      console.error('Failed to add event', error);
+      setConfirmationStatus('Failed to add note.');
     }
   }
 
@@ -434,149 +374,99 @@ export default function DashboardPage() {
     try {
       await deleteCalendarEvent(eventId);
       setEvents((current) => current.filter((e) => e.id !== eventId));
-      setConfirmationStatus('Note deleted');
+      setConfirmationStatus('Note deleted.');
+      setTimeout(() => setConfirmationStatus(''), 2000);
     } catch (error) {
-      console.error('Failed to delete note', error);
-      setConfirmationStatus('Could not delete note');
+      console.error('Failed to delete event', error);
+      setConfirmationStatus('Failed to delete note.');
     }
   }
 
-  // Just print the current board
-  function handlePrint() {
-    window.print();
+  const [activePerson, setActivePerson] = useState<Person | null>(null);
+
+  function handleDragStart(event: DragStartEvent) {
+    const { active } = event;
+    const person = people.find((p) => p.id === active.id);
+    if (person) setActivePerson(person);
   }
 
   async function handleDragEnd(event: DragEndEvent) {
-    const activeId = String(event.active.id);
-    const overId = event.over ? String(event.over.id) : '';
+    const { active, over } = event;
+    setActivePerson(null);
 
-    if (!activeId.startsWith('person:')) {
-      return;
-    }
+    if (!over) return;
 
-    const draggedPersonId = activeId.replace('person:', '');
+    const draggedPersonId = (active.id as string).replace('person:', '');
+    const overId = over.id as string;
+
+    console.log(`[handleDragEnd] Dragged ${draggedPersonId} over ${overId}`);
 
     if (overId.startsWith('seat:')) {
-      const targetSeatId = overId.replace('seat:', '');
-      const allSeats = vehicles.flatMap((vehicle) => vehicle.seats);
-      const sourceSeat = allSeats.find((seat) => seat.personId === draggedPersonId);
-      const targetSeat = allSeats.find((seat) => seat.id === targetSeatId);
-
-      setVehicles((currentVehicles) => {
-        let sourceSeatPersonId: string | undefined;
-
-        const clearedVehicles = currentVehicles.map((vehicle) => ({
-          ...vehicle,
-          seats: vehicle.seats.map((seat) => {
-            if (seat.id === targetSeatId) {
-              sourceSeatPersonId = seat.personId;
-            }
-
-            if (seat.personId === draggedPersonId) {
-              return { ...seat, personId: undefined };
-            }
-
-            return seat;
-          }),
-        }));
-
-        return clearedVehicles.map((vehicle) => ({
-          ...vehicle,
-          seats: vehicle.seats.map((seat) => {
-            if (seat.id === targetSeatId) {
-              return { ...seat, personId: draggedPersonId };
-            }
-
-            if (sourceSeatPersonId && seat.personId === undefined) {
-              const wasDraggedFromThisSeat = currentVehicles
-                .flatMap((currentVehicle) => currentVehicle.seats)
-                .some((currentSeat) => currentSeat.id === seat.id && currentSeat.personId === draggedPersonId);
-
-              if (wasDraggedFromThisSeat) {
-                return { ...seat, personId: sourceSeatPersonId };
-              }
-            }
-
-            return seat;
-          }),
-        }));
-      });
-
-      // Clear from duties when dropped into a seat
-      const sourceDuty = duties.find((duty) => duty.personId === draggedPersonId);
-      setDuties((currentDuties) =>
-        currentDuties.map((duty) =>
-          duty.personId === draggedPersonId ? { ...duty, personId: undefined } : duty
-        )
-      );
-
-      try {
-        const boardDate = formatDateForSupabase(selectedDate);
-
-        await saveSeatAssignment(boardDate, targetSeatId, draggedPersonId, shift);
-        setConfirmationStatus('');
-
-        if (sourceSeat && sourceSeat.id !== targetSeatId) {
-          await saveSeatAssignment(boardDate, sourceSeat.id, targetSeat?.personId, shift);
-        }
-
-        // Clear duty assignment in DB if dragged from a duty
-        if (sourceDuty) {
-          await saveDutyAssignment(boardDate, sourceDuty.id, undefined, shift);
-        }
-      } catch (error) {
-        console.error('Failed to save seat assignment', error);
-        setDataSource('mock');
-      }
-    } else if (overId.startsWith('duty:')) {
-      const targetDutyId = overId.replace('duty:', '');
-
-      // Clear person from any seat
+      const seatId = overId.replace('seat:', '');
+      
       setVehicles((currentVehicles) =>
         currentVehicles.map((vehicle) => ({
           ...vehicle,
-          seats: vehicle.seats.map((seat) =>
-            seat.personId === draggedPersonId ? { ...seat, personId: undefined } : seat
-          ),
-        }))
+          seats: vehicle.seats.map((seat) => {
+            if (seat.id === seatId) {
+              return { ...seat, personId: draggedPersonId };
+            }
+            return seat;
+          }),
+        })),
       );
 
-      // Assign to target duty and clear from any other duty
-      setDuties((currentDuties) =>
-        currentDuties.map((duty) => {
-          if (duty.id === targetDutyId) {
-            return { ...duty, personId: draggedPersonId };
-          }
-          if (duty.personId === draggedPersonId) {
-            return { ...duty, personId: undefined };
-          }
-          return duty;
-        })
-      );
-
-      // Also clear the seat assignment in the database
-      const allSeats = vehicles.flatMap((vehicle) => vehicle.seats);
-      const sourceSeat = allSeats.find((seat) => seat.personId === draggedPersonId);
-      if (sourceSeat) {
-        try {
-          const boardDate = formatDateForSupabase(selectedDate);
-          await saveSeatAssignment(boardDate, sourceSeat.id, undefined, shift);
-        } catch (error) {
-          console.error('Failed to clear seat assignment', error);
-        }
-      }
-
-      // Save duty assignment to database
       try {
         const boardDate = formatDateForSupabase(selectedDate);
-        await saveDutyAssignment(boardDate, targetDutyId, draggedPersonId, shift);
-      } catch (error) {
-        console.error('Failed to save duty assignment', error);
+        await saveSeatAssignment(boardDate, seatId, draggedPersonId, shift);
+      } catch (err) {
+        console.error('Failed to save seat assignment', err);
       }
+      setConfirmationStatus('');
 
+    } else if (overId.startsWith('duty:')) {
+      const dutyId = overId.replace('duty:', '');
+
+      setDuties((currentDuties) =>
+        currentDuties.map((duty) => {
+          if (duty.id === dutyId) {
+            return { ...duty, personId: draggedPersonId };
+          }
+          return duty;
+        }),
+      );
+
+      try {
+        const boardDate = formatDateForSupabase(selectedDate);
+        await saveDutyAssignment(boardDate, dutyId, draggedPersonId, shift);
+      } catch (err) {
+        console.error('Failed to save duty assignment', err);
+      }
+      setConfirmationStatus('');
+    } else if (overId.startsWith('standby:')) {
+      const index = parseInt(overId.replace('standby:', ''), 10);
+      setStandbyAssignments((current) => {
+        const next = [...current];
+        next[index] = draggedPersonId;
+        return next;
+      });
+      try {
+        const boardDate = formatDateForSupabase(selectedDate);
+        await saveStandbyAssignment(boardDate, index, draggedPersonId, shift);
+      } catch (err) {
+        console.error('Failed to save standby assignment', err);
+      }
       setConfirmationStatus('');
     }
   }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    })
+  );
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-950 text-white">
@@ -600,18 +490,22 @@ export default function DashboardPage() {
           onRegenerateBoard={handleRegenerateBoard}
         />
 
-        <DndContext onDragEnd={handleDragEnd}>
-          <section className="px-4 py-8 sm:py-12">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          modifiers={[restrictToWindowEdges]}
+        >
+          <div className="px-4 py-8 sm:py-12">
             <RidersBoard
               selectedDate={selectedDate}
               shift={shift}
-              onShiftChange={setShift}
-              isOffDuty={isOffDuty}
-              shiftLabel={getShiftLabel(selectedDate)}
               vehicles={vehicles}
               people={people}
               duties={duties}
               events={events}
+              standbyAssignments={standbyAssignments}
               onAddEvent={handleAddEvent}
               onDeleteEvent={handleDeleteEvent}
             />
@@ -621,7 +515,15 @@ export default function DashboardPage() {
               onPrint={handlePrint}
               isBoardEmpty={!vehicles.some((v) => v.seats.some((s) => s.personId)) && !duties.some((d) => d.personId)}
             />
-          </section>
+          </div>
+
+          <DragOverlay zIndex={1000}>
+            {activePerson ? (
+              <div className="bg-white text-slate-900 px-3 py-2 border-2 border-ink shadow-xl font-black uppercase text-[11px] pointer-events-none">
+                {activePerson.name}
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       </div>
     </div>

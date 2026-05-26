@@ -191,7 +191,7 @@ export function assignSeat(
  * 6. OIC/DRIVER priority over BA/ECO
  * 7. If unable to fill critical seat → empty (UI shows SBY)
  * 8. No skillset → ECO on 41P1
- * 9. WC rank MUST be in OIC seat
+ * 9. WC rank rotates between 41P1 OIC and 41P2 OIC
  * 10. Tie on time → fewer total rides
  */
 export function generateBoardAssignments(
@@ -200,7 +200,10 @@ export function generateBoardAssignments(
   history: AssignmentHistory[] = []
 ): Record<string, string | undefined> {
   const assignments: Record<string, string | undefined> = {};
-  const assignedPersonIds = new Set<string>();
+  
+  // Trackers per layer as requested by client (independent layers)
+  const assignedToPumps = new Set<string>();
+  const assignedToLadder = new Set<string>();
 
   const v41P1 = vehicles.find((v) => v.name === '41P1');
   const v41P2 = vehicles.find((v) => v.name === '41P2');
@@ -231,12 +234,13 @@ export function generateBoardAssignments(
   const tryAssign = (
     seat: Seat | undefined,
     filter: (p: Person) => boolean,
-    ffPriority: boolean = false
+    ffPriority: boolean = false,
+    tracker: Set<string> = assignedToPumps
   ): boolean => {
     if (!seat) return false;
 
     let candidates = people.filter(
-      (p) => !assignedPersonIds.has(p.id) && isAvailable(p) && filter(p)
+      (p) => !tracker.has(p.id) && isAvailable(p) && filter(p)
     );
 
     if (candidates.length === 0) return false;
@@ -250,143 +254,99 @@ export function generateBoardAssignments(
     if (!best) return false;
 
     assignments[seat.id] = best.id;
-    assignedPersonIds.add(best.id);
+    tracker.add(best.id);
     return true;
   };
 
   const getSeatsByLabel = (vehicle: Vehicle, label: string): Seat[] =>
     vehicle.seats.filter((s) => s.label === label);
 
-  // === PHASE 1: 41P1 Core Crew ===
-  const p1OIC = getSeat(v41P1, 'OIC');
-  const p1Driver = getSeat(v41P1, 'DRIVER');
-  const p1ECO = getSeat(v41P1, 'ECO');
-
-  // Rule 9: WC must be in OIC seat
-  const wcPerson = people.find((p) => p.rank === 'WC' && isAvailable(p));
-  if (wcPerson && p1OIC && wcPerson.skills.includes('OIC')) {
-    assignments[p1OIC.id] = wcPerson.id;
-    assignedPersonIds.add(wcPerson.id);
-  } else {
-    tryAssign(p1OIC, (p) => p.skills.includes('OIC') && (p.rank === 'WC' || p.rank === 'CC'));
-  }
-  tryAssign(p1Driver, (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
+  // === LAYER 1: PUMPS (41P1 & 41P2) ===
   
-  // Rule 2 & 5: Handle multiple BA seats correctly
+  // 1. OIC Rotation (Rule 9: WC rotates between P1 and P2)
+  const p1OIC = getSeat(v41P1, 'OIC');
+  const p2OIC = getSeat(v41P2, 'OIC');
+  
+  // Pick all eligible OIC candidates (WC and CC)
+  const oicCandidates = people.filter(p => isAvailable(p) && p.skills.includes('OIC') && (p.rank === 'WC' || p.rank === 'CC'));
+  
+  // Assign P1 OIC first, then P2 OIC
+  if (p1OIC) {
+    const best = pickBest(oicCandidates.filter(p => !assignedToPumps.has(p.id)), p1OIC.id);
+    if (best) {
+      assignments[p1OIC.id] = best.id;
+      assignedToPumps.add(best.id);
+    }
+  }
+  if (p2OIC) {
+    const best = pickBest(oicCandidates.filter(p => !assignedToPumps.has(p.id)), p2OIC.id);
+    if (best) {
+      assignments[p2OIC.id] = best.id;
+      assignedToPumps.add(best.id);
+    }
+  }
+
+  // 2. 41P1 Core Drivers & BA
+  tryAssign(getSeat(v41P1, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
   getSeatsByLabel(v41P1, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
-  // === PHASE 2: 41P2 Core Crew ===
-  const p2OIC = getSeat(v41P2, 'OIC');
-  const p2Driver = getSeat(v41P2, 'DRIVER');
-  const p2ECO = getSeat(v41P2, 'ECO');
-
-  tryAssign(p2OIC, (p) => p.skills.includes('OIC') && (p.rank === 'WC' || p.rank === 'CC'));
-  tryAssign(p2Driver, (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
-  
-  // Handle multiple BA seats for P2
+  // 3. 41P2 Core Drivers & BA
+  tryAssign(getSeat(v41P2, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
   getSeatsByLabel(v41P2, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
-  // === PHASE 3: 41A8 — crewed ONLY from 41P2 pool (Rule 4) ===
-  const a8OIC = getSeat(v41A8, 'OIC');
-  const a8Driver = getSeat(v41A8, 'DRIVER');
-
-  const p2SeatIds = v41P2.seats.map((s) => s.id);
-
-  // Pull 41A8 OIC from 41P2 (not OIC seat — preserve command)
-  if (a8OIC) {
-    const p2Assignments = Object.entries(assignments).filter(
-      ([seatId, personId]) => personId && p2SeatIds.includes(seatId) && seatId !== p2OIC?.id
-    );
-    const candidates = p2Assignments
-      .map(([seatId, personId]) => {
-        const person = people.find((p) => p.id === personId);
-        // Rule: Re-use eligibility rules (isEligibleForSeat) for ladder check
-        return person && isEligibleForSeat(person, 'OIC', true) ? { person, seatId } : null;
-      })
-      .filter((x): x is { person: Person; seatId: string } => x !== null);
-
-    if (candidates.length > 0) {
-      const best = pickBest(candidates.map(c => c.person), a8OIC.id);
-      if (best) {
-        assignments[a8OIC.id] = best.id;
-        // Also add to assigned set to ensure they aren't somehow reused elsewhere
-        assignedPersonIds.add(best.id);
+  // 4. Backfill remaining pump seats
+  [v41P1, v41P2].forEach(v => {
+    v.seats.forEach(seat => {
+      if (!assignments[seat.id]) {
+        tryAssign(seat, (p) => isEligibleForSeat(p, seat.label, false));
       }
-    }
+    });
+  });
+
+  // === LAYER 2: SPECIALIST (41A8) ===
+  // True independent layer — can overlap with Pumps as requested
+  if (v41A8) {
+    const a8OIC = getSeat(v41A8, 'OIC');
+    const a8Driver = getSeat(v41A8, 'DRIVER');
+    
+    // Pick OIC (independent of P1/P2 assignments)
+    tryAssign(a8OIC, (p) => p.skills.includes('TTO') || p.skills.includes('OIC'), false, assignedToLadder);
+    // Pick Driver (independent of P1/P2 assignments)
+    tryAssign(a8Driver, (p) => p.skills.includes('LGVETL'), false, assignedToLadder);
   }
 
-  // Pull 41A8 Driver from 41P2 (any seat, not OIC, and NOT already picked for a8OIC)
-  if (a8Driver) {
-    const a8OicPersonId = assignments[a8OIC?.id ?? ''];
-    const p2Assignments = Object.entries(assignments).filter(
-      ([seatId, personId]) => 
-        personId && 
-        p2SeatIds.includes(seatId) && 
-        seatId !== p2OIC?.id &&
-        personId !== a8OicPersonId // Rule: Must be a different person than the OIC
-    );
-    const candidates = p2Assignments
-      .map(([seatId, personId]) => {
-        const person = people.find((p) => p.id === personId);
-        // Rule: Re-use eligibility rules (isEligibleForSeat) for ladder check
-        return person && isEligibleForSeat(person, 'DRIVER', true) ? { person, seatId } : null;
-      })
-      .filter((x): x is { person: Person; seatId: string } => x !== null);
-
-    if (candidates.length > 0) {
-      const best = pickBest(candidates.map(c => c.person), a8Driver.id);
-      if (best) {
-        assignments[a8Driver.id] = best.id;
-        assignedPersonIds.add(best.id);
-      }
+  // === LAYER 3: ECO Priority (Rule 6) ===
+  const p1ECO = getSeat(v41P1, 'ECO');
+  const p2ECO = getSeat(v41P2, 'ECO');
+  
+  // Try assign P1 ECO first
+  if (p1ECO && !assignments[p1ECO.id]) {
+    tryAssign(p1ECO, (p) => p.skills.includes('BA'), true);
+    // Rule 8: No skillset → ECO on 41P1
+    if (!assignments[p1ECO.id]) {
+      tryAssign(p1ECO, (p) => p.skills.length === 0, false);
     }
   }
-
-  // === PHASE 4: Backfill vacated 41P2 seats ===
-  const backfillSeats = v41P2.seats.filter((seat) => !assignments[seat.id]);
-  for (const seat of backfillSeats) {
-    const personId = assignSeat(seat, people, history, assignedPersonIds, false);
-    if (personId) {
-      assignments[seat.id] = personId;
-      assignedPersonIds.add(personId);
-    }
+  
+  // Then try assign P2 ECO
+  if (p2ECO && !assignments[p2ECO.id]) {
+    tryAssign(p2ECO, (p) => p.skills.includes('BA'), true);
   }
-
-  // === PHASE 5: ECO ===
-  tryAssign(p1ECO, (p) => p.skills.includes('BA'), true);
-  tryAssign(p2ECO, (p) => p.skills.includes('BA'), true);
-
-  // === PHASE 6: No skillset → ECO on 41P1 (Rule 8) ===
-  const noSkillRemaining = people.filter(
-    (p) => !assignedPersonIds.has(p.id) && isAvailable(p) && p.skills.length === 0
-  );
-  if (p1ECO && !assignments[p1ECO.id] && noSkillRemaining.length > 0) {
-    const best = pickBest(noSkillRemaining, p1ECO.id);
-    if (best) {
-      assignments[p1ECO.id] = best.id;
-      assignedPersonIds.add(best.id);
-    }
-  }
-
-  // Log for debugging
-  console.log('[generateBoardAssignments] Result:', assignments);
 
   return assignments;
 }
 
 /**
- * Generate automatic duty assignments following Rule 6:
- * Mess/Tea, Watchroom and Bollies rotate fairly between FF Rank
- * based on longest time since last duty assignment.
+ * Fair rotation for station duties (Mess, Watchroom, Boilers)
+ * Only FF rank eligible.
  */
 export function generateDutyAssignments(
   duties: Duty[],
   people: Person[],
-  history: AssignmentHistory[] = [],
-  excludedPersonIds: Set<string> = new Set()
+  history: AssignmentHistory[]
 ): Record<string, string | undefined> {
   const assignments: Record<string, string | undefined> = {};
-  const assignedPersonIds = new Set<string>(excludedPersonIds);
+  const assignedPersonIds = new Set<string>();
 
   // Only FF rank eligible for duties
   const ffPeople = people.filter((p) => p.rank === 'FF' && isAvailable(p));

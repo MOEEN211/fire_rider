@@ -7,25 +7,24 @@ import VehicleBlock from './VehicleBlock';
 type RidersBoardProps = {
   selectedDate: Date;
   shift: 'Day' | 'Night';
-  onShiftChange: (shift: 'Day' | 'Night') => void;
   isOffDuty?: boolean;
   shiftLabel?: string;
   vehicles: Vehicle[];
   people: Person[];
   duties: Duty[];
   events: CalendarEvent[];
+  standbyAssignments: (string | undefined)[];
   onAddEvent: (time: string, title: string) => void;
   onDeleteEvent?: (eventId: string) => void;
 };
 
-export default function RidersBoard({ selectedDate, shift, onShiftChange, isOffDuty = false, shiftLabel, vehicles, people, duties, events, onAddEvent, onDeleteEvent }: RidersBoardProps) {
+export default function RidersBoard({ selectedDate, shift, isOffDuty = false, shiftLabel, vehicles, people, duties, events, standbyAssignments, onAddEvent, onDeleteEvent }: RidersBoardProps) {
   return (
     <main className="riders-board relative mx-auto w-[min(94vw,760px)] border-4 border-ink bg-board p-5 text-ink shadow-paper print:shadow-none sm:p-7">
       {isOffDuty && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-ink/80 text-board">
-          <div className="text-4xl font-black tracking-wider">OFF DUTY</div>
-          <div className="mt-2 text-lg font-bold">Green Watch — Rest Day</div>
-          <div className="mt-1 text-sm opacity-80">No riders board required</div>
+          <h2 className="text-3xl font-black uppercase tracking-widest">Off Duty</h2>
+          <p className="mt-2 text-sm font-bold uppercase tracking-widest opacity-80">Check tomorrow's rota</p>
         </div>
       )}
 
@@ -42,21 +41,9 @@ export default function RidersBoard({ selectedDate, shift, onShiftChange, isOffD
             <span className="text-[10px] font-bold uppercase tracking-wide text-ink/70">
               {shiftLabel ?? shift}
             </span>
-            <button
-              type="button"
-              onClick={() => onShiftChange('Day')}
-              className={`px-2 py-0.5 text-[10px] font-black uppercase border-2 border-ink ${shift === 'Day' ? 'bg-ink text-board' : 'bg-board text-ink'}`}
-            >
-              Day
-            </button>
-            <span className="text-[10px]">/</span>
-            <button
-              type="button"
-              onClick={() => onShiftChange('Night')}
-              className={`px-2 py-0.5 text-[10px] font-black uppercase border-2 border-ink ${shift === 'Night' ? 'bg-ink text-board' : 'bg-board text-ink'}`}
-            >
-              Night
-            </button>
+            <span className="text-[12px] font-black uppercase border-2 border-ink bg-ink text-board px-3 py-0.5 min-w-[70px] text-center">
+              {shift}
+            </span>
           </div>
         </div>
       </header>
@@ -83,7 +70,7 @@ export default function RidersBoard({ selectedDate, shift, onShiftChange, isOffD
       </div>
 
       <div className="mt-3">
-        <CombinedPersonnelTable people={people} />
+        <CombinedPersonnelTable people={people} standbyAssignments={standbyAssignments} />
       </div>
     </main>
   );

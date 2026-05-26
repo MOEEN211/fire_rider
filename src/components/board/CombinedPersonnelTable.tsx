@@ -1,11 +1,14 @@
 import type { Person } from '../../types/board';
 import DraggablePerson from '../dragdrop/DraggablePerson';
+import GenericDroppable from '../dragdrop/GenericDroppable';
+import { getPersonName } from '../../utils/people';
 
 type CombinedPersonnelTableProps = {
   people: Person[];
+  standbyAssignments: (string | undefined)[];
 };
 
-export default function CombinedPersonnelTable({ people }: CombinedPersonnelTableProps) {
+export default function CombinedPersonnelTable({ people, standbyAssignments }: CombinedPersonnelTableProps) {
   console.log('[CombinedPersonnelTable] Received people count:', people.length);
   return (
     <section className="border-2 border-ink relative isolate">
@@ -25,7 +28,15 @@ export default function CombinedPersonnelTable({ people }: CombinedPersonnelTabl
             </div>
             <div className="border-r border-ink px-1 text-center">{person.rides}</div>
             <div className="border-r border-ink px-1 text-center">{index + 1}</div>
-            <div className="px-1"> </div>
+            <GenericDroppable id={`standby:${index}`} className="px-1 min-h-[1.5rem] flex items-center">
+              {standbyAssignments[index] && (
+                <DraggablePerson personId={standbyAssignments[index]!}>
+                  <span className="uppercase text-blue-300">
+                    {getPersonName(people, standbyAssignments[index]!)}
+                  </span>
+                </DraggablePerson>
+              )}
+            </GenericDroppable>
           </div>
         </DraggablePerson>
       ))}
