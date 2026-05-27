@@ -7,11 +7,11 @@ import BoardActions from '../components/board/BoardActions';
 import RidersBoard from '../components/board/RidersBoard';
 import DateNavigator from '../components/layout/DateNavigator';
 import { mockDuties, mockEvents, mockPeople, mockVehicles } from '../data/mockBoardData';
-import { confirmBoardByDate, getAssignmentHistory, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, getPersonTotalRides, getPersonRidesForDate, getRosterAssignments, getStandbyAssignments, saveDutyAssignment, saveRosterAssignment, saveSeatAssignment, saveStandbyAssignment } from '../services/boardService';
+import { confirmBoardByDate, getAssignmentHistory, getBoardAssignments, getBoardByDate, getBoardDutyAssignments, getPersonTotalRides, getRosterAssignments, getStandbyAssignments, saveDutyAssignment, saveRosterAssignment, saveSeatAssignment, saveStandbyAssignment } from '../services/boardService';
 import { createCalendarEvent, deleteCalendarEvent } from '../services/eventService';
 import { getDashboardData, getEventsByDate } from '../services/dashboardDataService';
-import { buildMockHistory, generateBoardAssignments, generateDutyAssignments } from '../services/seatAssignmentService';
-import { getShiftForDate, getShiftLabel } from '../services/shiftPatternService';
+import { generateBoardAssignments, generateDutyAssignments } from '../services/seatAssignmentService';
+import { getShiftForDate } from '../services/shiftPatternService';
 import type { CalendarEvent, Duty, Person, Vehicle } from '../types/board';
 
 function formatDateForSupabase(date: Date) {
