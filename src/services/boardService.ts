@@ -422,30 +422,41 @@ export async function saveStandbyAssignment(date: string, position: number, pers
 }
 
 export async function getAssignmentHistory(): Promise<any[]> {
-  const { data, error } = await supabase
-    .from('board_seat_assignments')
-    .select(`
-      person_id,
-      seat_id,
-      boards (date)
-    `)
-    .not('person_id', 'is', null);
+  const [seatResult, dutyResult] = await Promise.all([
+    supabase
+      .from('board_seat_assignments')
+      .select(`person_id, seat_id, boards (date)`)
+      .not('person_id', 'is', null),
+    (supabase as any)
+      .from('board_duty_assignments')
+      .select(`person_id, duty_id, boards (date)`)
+      .not('person_id', 'is', null),
+  ]);
 
-  if (error) {
-    console.error('[getAssignmentHistory] Error:', error);
-    return [];
+  if (seatResult.error) {
+    console.error('[getAssignmentHistory] Seat error:', seatResult.error);
+  }
+  if (dutyResult.error) {
+    console.error('[getAssignmentHistory] Duty error:', dutyResult.error);
   }
 
-  // Group by person+seat and find max date
+  // Group by person+id and find most recent date
   const historyMap = new Map<string, Date>();
-  ((data ?? []) as any[]).forEach((row: any) => {
+
+  ((seatResult.data ?? []) as any[]).forEach((row: any) => {
     if (!row.boards || !row.person_id || !row.seat_id) return;
     const key = `${row.person_id}_${row.seat_id}`;
     const date = new Date(row.boards.date);
     const existing = historyMap.get(key);
-    if (!existing || date > existing) {
-      historyMap.set(key, date);
-    }
+    if (!existing || date > existing) historyMap.set(key, date);
+  });
+
+  ((dutyResult.data ?? []) as any[]).forEach((row: any) => {
+    if (!row.boards || !row.person_id || !row.duty_id) return;
+    const key = `${row.person_id}_${row.duty_id}`;
+    const date = new Date(row.boards.date);
+    const existing = historyMap.get(key);
+    if (!existing || date > existing) historyMap.set(key, date);
   });
 
   return Array.from(historyMap.entries()).map(([key, lastDate]) => {
