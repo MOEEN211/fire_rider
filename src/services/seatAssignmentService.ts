@@ -341,53 +341,6 @@ export function generateBoardAssignments(
     });
   });
 
-  // === LAYER 2: SPECIALIST (41A8) ===
-  // 41A8 crew MUST come from 41P2 only (not 41P1)
-  if (v41A8) {
-    const a8OIC = getSeat(v41A8, 'OIC');
-    const a8Driver = getSeat(v41A8, 'DRIVER');
-    
-    // Get the list of people assigned to 41P2
-    const p2AssignedPeople = v41P2.seats
-      .map(seat => assignments[seat.id])
-      .filter((id): id is string => !!id)
-      .map(id => people.find(p => p.id === id))
-      .filter((p): p is Person => !!p);
-    
-    console.log('[41A8] 41P2 assigned people:', p2AssignedPeople.map(p => p.name));
-    
-    // Find eligible OIC from 41P2 crew only (must have TTO or OIC skill)
-    const p2OICCands = p2AssignedPeople.filter(p => 
-      p.skills.includes('TTO') || p.skills.includes('OIC')
-    );
-    console.log('[41A8] P2 OIC candidates:', p2OICCands.map(p => p.name));
-    
-    // Find eligible Driver from 41P2 crew only (must have LGVETL)
-    const p2DriverCands = p2AssignedPeople.filter(p => 
-      p.skills.includes('LGVETL')
-    );
-    console.log('[41A8] P2 Driver candidates:', p2DriverCands.map(p => p.name));
-    
-    // Assign 41A8 OIC from P2 crew
-    if (a8OIC && p2OICCands.length > 0) {
-      const bestOIC = pickBest(p2OICCands, a8OIC.id);
-      if (bestOIC) {
-        assignments[a8OIC.id] = bestOIC.id;
-        console.log('[41A8] Assigned OIC from P2:', bestOIC.name);
-      }
-    }
-    
-    // Assign 41A8 Driver from P2 crew (different person from OIC)
-    const p2DriverCandsExclOIC = p2DriverCands.filter(p => p.id !== assignments[a8OIC?.id ?? '']);
-    if (a8Driver && p2DriverCandsExclOIC.length > 0) {
-      const bestDriver = pickBest(p2DriverCandsExclOIC, a8Driver.id);
-      if (bestDriver) {
-        assignments[a8Driver.id] = bestDriver.id;
-        console.log('[41A8] Assigned Driver from P2:', bestDriver.name);
-      }
-    }
-  }
-
   // === LAYER 3: ECO Priority (Rule 6) ===
   const p1ECO = getSeat(v41P1, 'ECO');
   const p2ECO = getSeat(v41P2, 'ECO');
@@ -421,6 +374,54 @@ export function generateBoardAssignments(
     });
   });
 
+  // === LAYER 5: SPECIALIST (41A8) - MUST happen after all pump seats filled ===
+  // 41A8 crew MUST come from 41P2 only (not 41P1)
+  if (v41A8) {
+    const a8OIC = getSeat(v41A8, 'OIC');
+    const a8Driver = getSeat(v41A8, 'DRIVER');
+    
+    // Get the FULL list of people assigned to 41P2 (now all 5 seats should be filled)
+    const p2AssignedPeople = v41P2.seats
+      .map(seat => assignments[seat.id])
+      .filter((id): id is string => !!id)
+      .map(id => people.find(p => p.id === id))
+      .filter((p): p is Person => !!p);
+    
+    console.log('[41A8] 41P2 assigned people:', p2AssignedPeople.map(p => p.name));
+    console.log('[41A8] Total P2 crew count:', p2AssignedPeople.length);
+    
+    // Find eligible OIC from 41P2 crew only (must have TTO or OIC skill)
+    const p2OICCands = p2AssignedPeople.filter(p => 
+      p.skills.includes('TTO') || p.skills.includes('OIC')
+    );
+    console.log('[41A8] P2 OIC candidates:', p2OICCands.map(p => p.name));
+    
+    // Find eligible Driver from 41P2 crew only (must have LGVETL)
+    const p2DriverCands = p2AssignedPeople.filter(p => 
+      p.skills.includes('LGVETL')
+    );
+    console.log('[41A8] P2 Driver candidates:', p2DriverCands.map(p => p.name));
+    
+    // Assign 41A8 OIC from P2 crew
+    if (a8OIC && p2OICCands.length > 0) {
+      const bestOIC = pickBest(p2OICCands, a8OIC.id);
+      if (bestOIC) {
+        assignments[a8OIC.id] = bestOIC.id;
+        console.log('[41A8] Assigned OIC from P2:', bestOIC.name);
+      }
+    }
+    
+    // Assign 41A8 Driver from P2 crew (different person from OIC)
+    const p2DriverCandsExclOIC = p2DriverCands.filter(p => p.id !== assignments[a8OIC?.id ?? '']);
+    if (a8Driver && p2DriverCandsExclOIC.length > 0) {
+      const bestDriver = pickBest(p2DriverCandsExclOIC, a8Driver.id);
+      if (bestDriver) {
+        assignments[a8Driver.id] = bestDriver.id;
+        console.log('[41A8] Assigned Driver from P2:', bestDriver.name);
+      }
+    }
+  }
+
   return assignments;
 }
 
@@ -449,53 +450,42 @@ export function generateDutyAssignments(
     return assignments;
   }
 
-  // Track how many duties each person gets this round
-  const dutyCount: Record<string, number> = {};
-  ffPeople.forEach(p => dutyCount[p.id] = 0);
+  const dutyIds = new Set(duties.map(d => d.id));
 
-  // For each duty, find the best candidate with strong rotation logic
+  // For each FF person, find how many days ago they last did ANY duty
+  // Higher daysSince = hasn't done a duty in longer = higher priority
+  const daysSinceAnyDuty = (person: Person): number => {
+    const dutyHistory = history.filter(h => h.personId === person.id && dutyIds.has(h.seatId));
+    if (dutyHistory.length === 0) return 99999; // never done any duty — top priority
+    const mostRecent = dutyHistory.reduce((best, h) =>
+      (h.lastDate && (!best.lastDate || h.lastDate > best.lastDate)) ? h : best
+    );
+    if (!mostRecent.lastDate) return 99999;
+    return Math.floor((Date.now() - mostRecent.lastDate.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  // Sort FF people by days since any duty (descending = longest ago first)
+  // This is the master rotation order for this generation
+  const rotationOrder = [...ffPeople].sort((a, b) => {
+    const daysA = daysSinceAnyDuty(a);
+    const daysB = daysSinceAnyDuty(b);
+    if (daysB !== daysA) return daysB - daysA; // longest ago first
+    return a.rides - b.rides; // tie-break: fewer rides
+  });
+
+  console.log('[generateDutyAssignments] Rotation order:', rotationOrder.map(p => ({
+    name: p.name,
+    daysSinceAnyDuty: daysSinceAnyDuty(p),
+  })));
+
+  // Assign duties in rotation order — each person gets at most one duty per generation
+  const assigned = new Set<string>();
   for (const duty of duties) {
-    console.log(`[generateDutyAssignments] Assigning duty: ${duty.label} (${duty.id})`);
-    
-    // Score all candidates - lower score = better candidate
-    const scored = ffPeople.map((p) => {
-      // Base score from time since last assignment to this specific duty
-      const timeScore = scoreCandidate(p, duty.id, history);
-      
-      // Strong penalty for each duty already assigned this round
-      const currentDutyPenalty = (dutyCount[p.id] || 0) * 5000;
-      
-      // Additional penalty for any recent duty assignment (from history)
-      const recentDutyHistory = history.filter(h => 
-        h.personId === p.id && h.seatId.startsWith(duty.id.substring(0, 4))
-      );
-      const recentDutyPenalty = recentDutyHistory.length * 100;
-      
-      const totalScore = timeScore + currentDutyPenalty + recentDutyPenalty;
-      
-      return {
-        person: p,
-        score: totalScore,
-        breakdown: { timeScore, currentDutyPenalty, recentDutyPenalty }
-      };
-    });
-    
-    // Sort by score ascending (lowest = best)
-    scored.sort((a, b) => a.score - b.score);
-
-    console.log(`[generateDutyAssignments] Scored candidates for ${duty.label}:`, 
-      scored.map(s => ({ 
-        name: s.person.name, 
-        score: s.score, 
-        dutiesThisRound: dutyCount[s.person.id],
-        breakdown: s.breakdown
-      })));
-
-    if (scored.length > 0) {
-      const best = scored[0].person;
-      assignments[duty.id] = best.id;
-      dutyCount[best.id] = (dutyCount[best.id] || 0) + 1;
-      console.log(`[generateDutyAssignments] Assigned ${best.name} to ${duty.label} (now has ${dutyCount[best.id]} duties this round)`);
+    const pick = rotationOrder.find(p => !assigned.has(p.id));
+    if (pick) {
+      assignments[duty.id] = pick.id;
+      assigned.add(pick.id);
+      console.log(`[generateDutyAssignments] Assigned ${pick.name} to ${duty.label} (${daysSinceAnyDuty(pick)} days since last duty)`);
     }
   }
 
