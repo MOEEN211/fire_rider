@@ -339,9 +339,8 @@ export function generateBoardAssignments(
   tryAssign(getSeat(v41P1, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
   getSeatsByLabel(v41P1, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
-  // 5. Backfill remaining pump seats — 41P2 first, then 41P1
-  // Fill skill-matched first, then anyone to ensure all 10 seats filled
-  [v41P2, v41P1].forEach(v => {
+  // 5. Backfill remaining pump seats — P1 first (priority), then P2
+  [v41P1, v41P2].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
         tryAssign(seat, (p) => isEligibleForSeat(p, seat.label, false));
@@ -349,10 +348,8 @@ export function generateBoardAssignments(
     });
   });
 
-  // === LAYER 3: Final backfill — fill ALL remaining pump seats with anyone available ===
-  // This ensures ECO and any other empty seat is filled even with no-skill personnel (e.g. Kian)
-  // 41P2 filled first to maximise chance of keeping LGVETL people there for 41A8
-  [v41P2, v41P1].forEach(v => {
+  // Final backfill — fill ALL remaining seats with anyone available, P1 first
+  [v41P1, v41P2].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
         console.log(`[Final Backfill] Filling empty seat ${seat.label} on ${v.name}`);
