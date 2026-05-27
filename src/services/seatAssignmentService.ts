@@ -19,7 +19,7 @@ export const PUMP_SEAT_REQUIREMENTS: Record<string, SeatRequirement> = {
   OIC: { label: 'OIC', requiredSkills: ['OIC'], requiredRanks: ['WC', 'CC'], excludedRanks: ['FF'] },
   DRIVER: { label: 'DRIVER', requiredSkills: ['LGVE'], excludedRanks: ['WC'] },
   BA: { label: 'BA', requiredSkills: ['BA'], ffPriority: true },
-  ECO: { label: 'ECO', requiredSkills: ['BA'], ffPriority: true },
+  ECO: { label: 'ECO', requiredSkills: [], ffPriority: true }, // Rule 8: No skillset -> ECO on 41P1
 };
 
 // Seat requirements for 41A8
@@ -339,21 +339,11 @@ export function generateBoardAssignments(
   tryAssign(getSeat(v41P1, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
   getSeatsByLabel(v41P1, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
-  // 5. Backfill remaining pump seats — P1 first (priority), then P2
+  // 5. Backfill remaining pump seats (ECO and any remaining BA/Driver) — P1 first (priority), then P2
   [v41P1, v41P2].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
         tryAssign(seat, (p) => isEligibleForSeat(p, seat.label, false));
-      }
-    });
-  });
-
-  // Final backfill — fill ALL remaining seats with anyone available, P1 first
-  [v41P1, v41P2].forEach(v => {
-    v.seats.forEach(seat => {
-      if (!assignments[seat.id]) {
-        console.log(`[Final Backfill] Filling empty seat ${seat.label} on ${v.name}`);
-        tryAssign(seat, (p) => true, false);
       }
     });
   });
