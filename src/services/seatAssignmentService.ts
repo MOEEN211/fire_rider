@@ -324,16 +324,24 @@ export function generateBoardAssignments(
     }
   }
 
-  // 2. 41P1 Core Drivers & BA
+  // 2. 41P2 Driver — prioritise LGVETL holders so they stay on P2 for 41A8 crew selection
+  // LGVETL people MUST be on 41P2 (not 41P1) so 41A8 can pull its crew from P2 only
+  tryAssign(getSeat(v41P2, 'DRIVER'), (p) => p.skills.includes('LGVETL') && p.rank !== 'WC');
+  // Fallback: any LGVE driver if no LGVETL available
+  if (!assignments[getSeat(v41P2, 'DRIVER')?.id ?? '']) {
+    tryAssign(getSeat(v41P2, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
+  }
+
+  // 3. 41P2 BA — fill with remaining BA people (prefer FF)
+  getSeatsByLabel(v41P2, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
+
+  // 4. 41P1 Driver & BA — fill with whoever is left
   tryAssign(getSeat(v41P1, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
   getSeatsByLabel(v41P1, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
-  // 3. 41P2 Core Drivers & BA
-  tryAssign(getSeat(v41P2, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
-  getSeatsByLabel(v41P2, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
-
-  // 4. Backfill remaining pump seats with skill-matched people first
-  [v41P1, v41P2].forEach(v => {
+  // 5. Backfill remaining pump seats — 41P2 first, then 41P1
+  // Fill skill-matched first, then anyone to ensure all 10 seats filled
+  [v41P2, v41P1].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
         tryAssign(seat, (p) => isEligibleForSeat(p, seat.label, false));
@@ -342,8 +350,9 @@ export function generateBoardAssignments(
   });
 
   // === LAYER 3: Final backfill — fill ALL remaining pump seats with anyone available ===
-  // This ensures ECO and any other empty seat is filled even with no-skill personnel
-  [v41P1, v41P2].forEach(v => {
+  // This ensures ECO and any other empty seat is filled even with no-skill personnel (e.g. Kian)
+  // 41P2 filled first to maximise chance of keeping LGVETL people there for 41A8
+  [v41P2, v41P1].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
         console.log(`[Final Backfill] Filling empty seat ${seat.label} on ${v.name}`);
