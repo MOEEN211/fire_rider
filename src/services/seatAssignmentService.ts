@@ -332,7 +332,7 @@ export function generateBoardAssignments(
   tryAssign(getSeat(v41P2, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
   getSeatsByLabel(v41P2, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
-  // 4. Backfill remaining pump seats
+  // 4. Backfill remaining pump seats with skill-matched people first
   [v41P1, v41P2].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
@@ -341,30 +341,8 @@ export function generateBoardAssignments(
     });
   });
 
-  // === LAYER 3: ECO Priority (Rule 6) ===
-  const p1ECO = getSeat(v41P1, 'ECO');
-  const p2ECO = getSeat(v41P2, 'ECO');
-  
-  // Try assign P1 ECO first
-  if (p1ECO && !assignments[p1ECO.id]) {
-    tryAssign(p1ECO, (p) => p.skills.includes('BA'), true);
-    // If no BA available, use anyone (including no-skill people like Kian Macdonald)
-    if (!assignments[p1ECO.id]) {
-      tryAssign(p1ECO, (p) => true, false);
-    }
-  }
-  
-  // Then try assign P2 ECO - must fill this seat
-  if (p2ECO && !assignments[p2ECO.id]) {
-    tryAssign(p2ECO, (p) => p.skills.includes('BA'), true);
-    // If no BA available, use ANY available person
-    if (!assignments[p2ECO.id]) {
-      tryAssign(p2ECO, (p) => true, false);
-    }
-  }
-
-  // === LAYER 4: Final backfill - ensure ALL seats filled ===
-  // Fill any remaining empty seats with any available person
+  // === LAYER 3: Final backfill — fill ALL remaining pump seats with anyone available ===
+  // This ensures ECO and any other empty seat is filled even with no-skill personnel
   [v41P1, v41P2].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
