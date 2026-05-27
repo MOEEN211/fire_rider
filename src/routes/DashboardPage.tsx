@@ -422,7 +422,7 @@ export default function DashboardPage() {
   async function handleAddEvent(time: string, title: string) {
     try {
       const boardDate = formatDateForSupabase(selectedDate);
-      const newEvent = await createCalendarEvent(boardDate, time, title);
+      const newEvent = await createCalendarEvent(boardDate, title, time);
       setEvents((current) => [...current, newEvent]);
       setConfirmationStatus('Note added.');
       setTimeout(() => setConfirmationStatus(''), 2000);
