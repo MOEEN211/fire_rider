@@ -364,15 +364,15 @@ export function generateBoardAssignments(
     console.log('[41A8] 41P2 assigned people:', p2AssignedPeople.map(p => p.name));
     console.log('[41A8] Total P2 crew count:', p2AssignedPeople.length);
     
-    // Find eligible OIC from 41P2 crew only (must have TTO or OIC skill)
+    // Find eligible OIC from 41P2 crew only (must have TTO skill for 41A8)
     const p2OICCands = p2AssignedPeople.filter(p => 
-      p.skills.includes('TTO') || p.skills.includes('OIC')
+      isEligibleForSeat(p, 'OIC', true)
     );
     console.log('[41A8] P2 OIC candidates:', p2OICCands.map(p => p.name));
     
     // Find eligible Driver from 41P2 crew only (must have LGVETL)
     const p2DriverCands = p2AssignedPeople.filter(p => 
-      p.skills.includes('LGVETL')
+      isEligibleForSeat(p, 'DRIVER', true)
     );
     console.log('[41A8] P2 Driver candidates:', p2DriverCands.map(p => p.name));
     
