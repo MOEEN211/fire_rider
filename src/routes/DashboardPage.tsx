@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DndContext, DragOverlay, closestCorners, pointerWithin, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent } from '@dnd-kit/core';
-import { restrictToWindowEdges, snapCenterToCursor } from '@dnd-kit/modifiers';
+import { DndContext, DragOverlay, pointerWithin, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { addDays, subDays } from 'date-fns';
 import AbsenceManager from '../components/board/AbsenceManager';
 import BoardActions from '../components/board/BoardActions';
@@ -448,7 +447,8 @@ export default function DashboardPage() {
 
   function handleDragStart(event: DragStartEvent) {
     const { active } = event;
-    const person = people.find((p) => p.id === active.id);
+    const personId = (active.id as string).replace('person:', '');
+    const person = people.find((p) => p.id === personId);
     if (person) setActivePerson(person);
   }
 
@@ -525,7 +525,9 @@ export default function DashboardPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 3,
+        distance: 5,
+        delay: 100,
+        tolerance: 5,
       },
     })
   );
@@ -557,7 +559,6 @@ export default function DashboardPage() {
           collisionDetection={pointerWithin}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          modifiers={[restrictToWindowEdges, snapCenterToCursor]}
         >
           <div className="px-4 py-8 sm:py-12">
             <RidersBoard
