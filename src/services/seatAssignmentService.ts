@@ -259,7 +259,7 @@ export function generateBoardAssignments(
   };
 
   const getSeatsByLabel = (vehicle: Vehicle, label: string): Seat[] =>
-    vehicle.seats.filter((s) => s.label === label);
+    vehicle.seats.filter((s) => s.label.replace(/\s\d+$/, '') === label);
 
   // === LAYER 1: PUMPS (41P1 & 41P2) ===
   
@@ -324,13 +324,7 @@ export function generateBoardAssignments(
     }
   }
 
-  // 2. 41P1 Driver
-  tryAssign(getSeat(v41P1, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
-
-  // 3. 41P1 BA — fill first (Priority)
-  getSeatsByLabel(v41P1, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
-
-  // 4. 41P2 Driver — prioritise LGVETL holders so they stay on P2 for 41A8 crew selection
+  // 2. 41P2 Driver — prioritise LGVETL holders so they stay on P2 for 41A8 crew selection
   // LGVETL people MUST be on 41P2 (not 41P1) so 41A8 can pull its crew from P2 only
   tryAssign(getSeat(v41P2, 'DRIVER'), (p) => p.skills.includes('LGVETL') && p.rank !== 'WC');
   // Fallback: any LGVE driver if no LGVETL available
@@ -338,14 +332,31 @@ export function generateBoardAssignments(
     tryAssign(getSeat(v41P2, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
   }
 
-  // 5. 41P2 BA — fill with remaining BA people (prefer FF)
+  // 3. 41P2 BA — fill with remaining BA people (prefer FF)
   getSeatsByLabel(v41P2, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
 
-  // 6. Backfill remaining pump seats (ECO and any remaining BA/Driver) — P1 first (priority), then P2
-  [v41P1, v41P2].forEach(v => {
+  // 4. 41P1 Driver
+  tryAssign(getSeat(v41P1, 'DRIVER'), (p) => p.skills.includes('LGVE') && p.rank !== 'WC');
+
+  // 5. 41P1 BA — fill with remaining BA people (prefer FF)
+  getSeatsByLabel(v41P1, 'BA').forEach(seat => tryAssign(seat, (p) => p.skills.includes('BA'), true));
+
+  // 6. Backfill remaining pump seats — P2 first to keep LGVETL people on P2 for 41A8
+  [v41P2, v41P1].forEach(v => {
     v.seats.forEach(seat => {
       if (!assignments[seat.id]) {
         tryAssign(seat, (p) => isEligibleForSeat(p, seat.label, false));
+      }
+    });
+  });
+
+  // 7. Final backfill — fill ANY remaining seat with anyone available (e.g. Kian Macdonald with no skills)
+  // This ensures all 10 pump seats are filled when 10 people are on duty
+  [v41P2, v41P1].forEach(v => {
+    v.seats.forEach(seat => {
+      if (!assignments[seat.id]) {
+        console.log(`[Final Backfill] Filling empty seat ${seat.label} on ${v.name}`);
+        tryAssign(seat, (p) => true, false);
       }
     });
   });
